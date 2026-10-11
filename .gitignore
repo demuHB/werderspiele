@@ -1,0 +1,6 @@
+# Original-Excel und Sicherungen nicht ins öffentliche Repo
+/Alle Werder Spiele Dennis.xlsx
+*_backup.xlsx
+~$*.xlsx
+__pycache__/
+.claude/
