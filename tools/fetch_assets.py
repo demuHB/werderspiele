@@ -20,7 +20,7 @@ CLUBS = ROOT / "data" / "clubs.json"
 PLAYERS = ROOT / "data" / "players.json"
 LOGOS = ROOT / "assets" / "logos"
 PHOTOS = ROOT / "assets" / "players"
-UA = "WerderspieleDashboard/1.0 (https://github.com/DerUserX/werderspiele; private non-commercial) python-urllib"
+UA = "WerderspieleDashboard/1.0 (https://github.com/demuHB/werderspiele; private non-commercial) python-urllib"
 
 
 def http_get(url):
