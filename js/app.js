@@ -110,8 +110,10 @@ function viewOverview() {
   const bogey = opp.filter((o) => o.n >= 5).sort((a, b) => a.ppg - b.ppg)[0];
   const streak = S.streaks(g);
   const last = g.slice(-6).reverse();
-  const nextMile = Math.ceil((g.length + 1) / 50) * 50;
-  const miles = [1, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500].filter((n) => n <= g.length).map((n) => g[n - 1]);
+  // Jubiläen zählen alle Stadionbesuche (Spalte Nr.), unabhängig vom Testspiel-Haken
+  const all = state.allGames;
+  const nextMile = Math.ceil((all.length + 1) / 50) * 50;
+  const miles = [1, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500].filter((n) => n <= all.length).map((n) => all[n - 1]);
   const away = st.filter((s) => !s.name.startsWith('Weserstadion'))[0];
   const seasons = S.bySeason(g);
 
@@ -129,8 +131,8 @@ function viewOverview() {
 
   <div class="grid grid-2" style="margin-top:14px">
     <div class="card"><h3>Bilanz</h3>${sunBar(r)}
-      <p class="small muted" style="margin:10px 0 0">Spiele mit Elfmeterschießen zählen als Sieg bzw. Niederlage.</p>
-      <p style="margin:12px 0 0"><b>Nächstes Jubiläum:</b> Spiel Nr. ${nextMile} – noch ${nextMile - g.length} ${nextMile - g.length === 1 ? 'Spiel' : 'Spiele'}.</p>
+      <p class="small muted" style="margin:10px 0 0">${state.hiddenFriendlies ? `Ohne ${state.hiddenFriendlies} Testspiele (oben einblendbar). ` : ''}Spiele mit Elfmeterschießen zählen als Sieg bzw. Niederlage.</p>
+      <p style="margin:12px 0 0"><b>Nächstes Jubiläum:</b> Besuch Nr. ${nextMile} – noch ${nextMile - all.length} ${nextMile - all.length === 1 ? 'Spiel' : 'Spiele'}.</p>
     </div>
     <div class="card"><h3>Letzte Spiele</h3><ul class="mini">${last.map((x) => miniGame(x)).join('')}</ul></div>
   </div>
@@ -148,7 +150,7 @@ function viewOverview() {
   <div class="card"><div class="chart-box tall"><canvas id="ch-seasons" aria-label="Spiele pro Saison nach Ergebnis"></canvas></div></div>
 
   <h2>Meilensteine</h2>
-  <div class="card"><ul class="mini">${miles.map((x) => miniGame(x, ` <span class="muted small">· Spiel Nr. ${x.nr}</span>`)).join('')}</ul></div>`;
+  <div class="card"><p class="section-sub" style="margin:0 0 8px">nach Stadionbesuch, inkl. Testspielen</p><ul class="mini">${miles.map((x) => miniGame(x, ` <span class="muted small">· Besuch Nr. ${x.nr}</span>`)).join('')}</ul></div>`;
 }
 function afterOverview() {
   const seasons = S.bySeason(state.games);
@@ -438,7 +440,7 @@ function viewCheck() {
 // ---------- Spiel-Dialog ----------
 function openGame(key) {
   const [kind, row] = key.split(':');
-  const g = (kind === 'extra' ? state.extra : state.games).find((x) => String(x.row) === row);
+  const g = (kind === 'extra' ? state.allExtra : state.allGames).find((x) => String(x.row) === row);
   if (!g) return;
   const side = (homeSide) => g.scorers.filter((s) => (s.forWerder === g.werderHome) === homeSide);
   const li = (s) => `<li>${avatar(s.name, s.team, 34)}<span>${esc(fullName(s.name, s.team))}${s.n > 1 ? ` <b>(${s.n})</b>` : ''}${s.tags.map((t) => `<span class="tag" title="${{ ET: 'Eigentor', FE: 'Foulelfmeter', HE: 'Handelfmeter' }[t]}">${t}</span>`).join('')}</span></li>`;
@@ -508,6 +510,32 @@ $('#theme-toggle').addEventListener('click', () => {
   render();
 });
 
+// ---------- Testspiele ----------
+const isFriendly = (g) => /friendly|testspiel|abschied/i.test(g.comp);
+
+// Setzt state.games/state.extra je nach Haken "Testspiele einbeziehen" und aktualisiert den Header.
+function applyFriendlyFilter() {
+  const keep = (g) => state.withFriendlies || !isFriendly(g);
+  state.games = state.allGames.filter(keep);
+  state.extra = state.allExtra.filter(keep);
+  state.hiddenFriendlies = state.allGames.length - state.games.length;
+  // Filter im Spiele-Tab, die es in der neuen Auswahl nicht mehr gibt, zurücksetzen
+  const f = state.gameFilter;
+  if (f.comp && !state.games.some((g) => g.comp === f.comp)) delete f.comp;
+  if (f.opp && !state.games.some((g) => g.opp === f.opp)) delete f.opp;
+  if (f.stadium && !state.games.some((g) => g.stadium === f.stadium)) delete f.stadium;
+  if (f.season && !state.games.some((g) => g.season === f.season)) delete f.season;
+  renderHeader();
+}
+
+function renderHeader() {
+  const r = S.record(state.games);
+  const nFriendly = state.allGames.filter(isFriendly).length;
+  $('#hero-sub').textContent = `Dennis Mulert · ${state.allGames.length} Spiele im Stadion seit ${state.allGames[0]?.date?.getFullYear() ?? ''}`;
+  $('#hero-record').innerHTML = `<span class="chip"><b>${r.S}</b>Siege</span><span class="chip"><b>${r.U}</b>Remis</span><span class="chip"><b>${r.N}</b>Niederlagen</span><span class="chip"><b>${r.gf}:${r.ga}</b>Tore</span>
+    <label class="chip toggle"><input type="checkbox" id="toggle-friendlies" ${state.withFriendlies ? 'checked' : ''}> inkl. ${nFriendly} Testspiele</label>`;
+}
+
 // ---------- Laden ----------
 function makePlayers(data) {
   return {
@@ -536,15 +564,14 @@ async function load() {
     const mainName = wb.SheetNames.find((n) => /haupt/i.test(n)) || wb.SheetNames[0];
     const extraName = wb.SheetNames.find((n) => /u23|all ?stars/i.test(n));
     const ctx = { clubs: state.clubs, stadiums: state.stadiums };
-    state.games = parseSheet(wb.Sheets[mainName], { ...ctx, kind: 'main' });
-    state.extra = extraName ? parseSheet(wb.Sheets[extraName], { ...ctx, kind: 'extra' }) : [];
-    state.issues = validate(state.games, { clubs: state.clubs, players: state.players, kind: 'main' });
-    state.extraIssues = validate(state.extra, { clubs: state.clubs, players: state.players, kind: 'extra' }).filter((i) => i.level !== 'info');
+    state.allGames = parseSheet(wb.Sheets[mainName], { ...ctx, kind: 'main' });
+    state.allExtra = extraName ? parseSheet(wb.Sheets[extraName], { ...ctx, kind: 'extra' }) : [];
+    state.issues = validate(state.allGames, { clubs: state.clubs, players: state.players, kind: 'main' });
+    state.extraIssues = validate(state.allExtra, { clubs: state.clubs, players: state.players, kind: 'extra' }).filter((i) => i.level !== 'info');
+    try { state.withFriendlies = localStorage.getItem('withFriendlies') === '1'; } catch { /* ohne Storage */ }
+    applyFriendlyFilter();
 
-    const r = S.record(state.games);
-    const last = state.games.at(-1);
-    $('#hero-sub').textContent = `Dennis Mulert · ${r.n} Spiele im Stadion seit ${state.games[0]?.date?.getFullYear() ?? ''}`;
-    $('#hero-record').innerHTML = `<span class="chip"><b>${r.S}</b>Siege</span><span class="chip"><b>${r.U}</b>Remis</span><span class="chip"><b>${r.N}</b>Niederlagen</span><span class="chip"><b>${r.gf}:${r.ga}</b>Tore</span>`;
+    const last = state.allGames.at(-1);
     const nErr = [...state.issues, ...state.extraIssues].filter((i) => i.level !== 'info').length;
     const badge = $('#check-badge');
     badge.hidden = false;
@@ -552,6 +579,13 @@ async function load() {
     badge.classList.toggle('ok', !nErr);
     $('#foot').innerHTML = `Letztes Spiel: ${fmt(last?.date)} · Daten aus <code>${DATA_URL}</code> · Logos &amp; Fotos: Wikipedia/Wikimedia Commons · privates, nicht-kommerzielles Projekt`;
     window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+    $('#hero-record').addEventListener('change', (e) => {
+      if (e.target.id !== 'toggle-friendlies') return;
+      state.withFriendlies = e.target.checked;
+      try { localStorage.setItem('withFriendlies', state.withFriendlies ? '1' : '0'); } catch { /* egal */ }
+      applyFriendlyFilter();
+      render();
+    });
     render();
   } catch (err) {
     console.error(err);

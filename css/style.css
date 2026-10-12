@@ -69,6 +69,9 @@ button, select, input { font: inherit; color: inherit; }
 .icon-btn:hover { background: rgba(255,255,255,.22); }
 .hero-record { max-width: 1180px; margin: 14px auto 0; display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { background: rgba(255,255,255,.12); border-radius: 999px; padding: 4px 12px; font-size: 13px; white-space: nowrap; }
+.chip.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(255,255,255,.2); user-select: none; }
+.chip.toggle:hover { background: rgba(255,255,255,.3); }
+.chip.toggle input { margin: 0; width: 15px; height: 15px; accent-color: #fff; cursor: pointer; }
 .chip b { font-family: "Barlow Condensed", sans-serif; font-size: 17px; margin-right: 3px; }
 
 /* ===== Tabs ===== */
@@ -154,7 +157,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 8px 16px 40px; }
   padding: 6px 8px; border-radius: 8px; background: var(--surface-2);
 }
 .score small { display: block; font: 500 11px Inter, sans-serif; color: var(--muted); margin-top: 2px; }
-.res-pill { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 6px; color: #fff; font: 700 13px "Barlow Condensed", sans-serif; }
+.res-pill { flex: none; display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 6px; color: #fff; font: 700 13px "Barlow Condensed", sans-serif; }
 .res-pill.S { background: var(--win); } .res-pill.U { background: var(--draw); } .res-pill.N { background: var(--loss); }
 .season-head { margin: 18px 0 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .season-head h3 { margin: 0; }
@@ -177,7 +180,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 8px 16px 40px; }
 .rank .who b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank .who small { color: var(--muted); font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank .bar { height: 6px; border-radius: 3px; background: var(--accent); margin-top: 4px; min-width: 3px; }
-.rank .val { font: 700 22px "Barlow Condensed", sans-serif; }
+.rank .val { font: 700 22px "Barlow Condensed", sans-serif; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
 .rank li.podium-1 .pos { color: #C9A227; } .rank li.podium-2 .pos { color: #9DA5AC; } .rank li.podium-3 .pos { color: #B87333; }
 .more-btn { margin-top: 10px; }
 
@@ -200,7 +203,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 8px 16px 40px; }
 .mini li:hover { background: var(--surface-2); }
 .mini .d { color: var(--muted); font-size: 12px; width: 74px; flex: none; }
 .mini .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mini .r { font: 700 17px "Barlow Condensed", sans-serif; }
+.mini .r { font: 700 17px "Barlow Condensed", sans-serif; flex: none; width: 2.6em; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Tabellen */
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
