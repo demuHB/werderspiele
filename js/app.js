@@ -1,6 +1,7 @@
 import { parseSheet, isWerder } from './parse.js';
 import * as S from './stats.js';
 import { validate, fmt } from './validate.js';
+import * as U from './upload.js';
 
 const DATA_URL = 'data/werderspiele.xlsx';
 const state = { games: [], extra: [], clubs: {}, stadiums: {}, players: null, issues: [], extraIssues: [], charts: [], gameFilter: {} };
@@ -433,7 +434,7 @@ function viewCheck() {
     <ol class="small" style="margin:0;padding-left:18px;line-height:1.8">
       <li>Neue Zeile in der Excel, gleiches Format: <code>Werder Bremen - Gegner</code>, Ergebnis <code>2:1 (1:0)</code>, Torschützen <code>Heim-Schützen - Gast-Schützen</code>, z. B. <code>Füllkrug (2), Stage (FE) - Kane</code>.</li>
       <li>Markierungen: <code>(2)</code> Anzahl, <code>(ET)</code> Eigentor, <code>(FE)</code> Foulelfmeter, <code>(HE)</code> Handelfmeter, <code>/</code> keine Tore, Elfmeterschießen: <code>1:1, 4:3 n. E. (0:1)</code>.</li>
-      <li>Die Datei auf GitHub als <code>data/werderspiele.xlsx</code> hochladen – nach ca. 1 Minute ist die Seite aktuell.</li>
+      <li>Excel speichern, oben auf den <b>Upload-Pfeil</b> klicken, Vorschau prüfen und „Hochladen“ – nach ca. 1 Minute ist die Seite überall aktuell.</li>
     </ol></div>`;
 }
 
@@ -510,6 +511,162 @@ $('#theme-toggle').addEventListener('click', () => {
   render();
 });
 
+// ---------- Excel aktualisieren (Upload zu GitHub) ----------
+const upDlg = () => $('#upload-dialog');
+const gameKey = (g) => `${+g.date}|${g.home}|${g.away}`;
+let toastTimer;
+function toast(html, ms = 6000) {
+  const t = $('#toast');
+  t.innerHTML = html;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+}
+function openUpload(html) {
+  $('#upload-body').innerHTML = html;
+  if (!upDlg().open) upDlg().showModal();
+}
+
+function viewTokenSetup(msg = '') {
+  const has = !!U.getToken();
+  openUpload(`
+    ${msg ? `<div class="msg err">${esc(msg)}</div>` : ''}
+    <p>Zum Hochladen braucht das Dashboard einmalig einen <b>GitHub-Token</b>. Er wird nur in diesem Browser gespeichert.</p>
+    <ol>
+      <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Neuen Fine-grained Token anlegen</a> (bei GitHub eingeloggt als <b>${esc(U.REPO.split('/')[0])}</b>).</li>
+      <li>Name z. B. „Werderspiele Upload“, Ablaufdatum nach Wunsch.</li>
+      <li><b>Repository access:</b> „Only select repositories“ → <b>${esc(U.REPO)}</b>.</li>
+      <li><b>Permissions → Repository → Contents:</b> „Read and write“.</li>
+      <li>„Generate token“ klicken und den Token hier einfügen.</li>
+    </ol>
+    <label class="field"><span class="small muted">Token</span>
+      <input type="password" id="token-input" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+    <div class="actions">
+      <button class="btn primary" id="token-save">Speichern &amp; prüfen</button>
+      ${has ? '<button class="btn" id="token-clear">Token entfernen</button>' : ''}
+      ${U.canRemember() ? '<button class="btn link" id="file-forget">Gemerkte Datei vergessen</button>' : ''}
+    </div>`);
+  $('#token-input').focus();
+}
+
+async function saveToken() {
+  const input = $('#token-input'), btn = $('#token-save');
+  btn.disabled = true;
+  btn.textContent = 'Prüfe …';
+  const res = await U.checkToken(input.value.trim());
+  if (!res.ok) return viewTokenSetup(res.msg);
+  U.setToken(input.value);
+  openUpload(`<div class="msg ok"><b>Token gespeichert.</b> Ab jetzt reicht der Upload-Button oben.</div>
+    <p>${U.canRemember()
+      ? `Wähle jetzt einmalig deine Datei <b>„${esc(U.EXPECTED_NAME)}“</b> aus (z. B. in <code>B:\\!Altes C\\Dokumente</code>). Der Browser merkt sich den Ort.`
+      : 'Wähle jetzt deine Excel-Datei aus.'}</p>
+    <div class="actions"><button class="btn primary" id="pick-file">Datei auswählen</button></div>`);
+}
+
+const pickAgain = (msg) => openUpload(`<div class="msg err">${msg}</div>
+  <div class="actions"><button class="btn primary" id="pick-file">Andere Datei wählen</button></div>`);
+
+async function startUpload({ forcePick = false } = {}) {
+  if (!U.getToken()) return viewTokenSetup();
+  const btn = $('#upload-btn');
+  let file;
+  try {
+    btn.classList.add('busy');
+    file = await U.getFile({ forcePick });
+  } catch (e) {
+    console.error(e);
+    return pickAgain(`Datei konnte nicht geöffnet werden: ${esc(e.message)}`);
+  } finally {
+    btn.classList.remove('busy');
+  }
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  let parsed;
+  try { parsed = parseWorkbook(buf); } catch {
+    return pickAgain(`„${esc(file.name)}“ ist keine lesbare Excel-Datei.`);
+  }
+  state.pendingUpload = { file, buf, parsed };
+  viewPreview();
+}
+
+function viewPreview() {
+  const p = state.pendingUpload, { file, parsed } = p;
+  const oldByKey = new Map(state.allGames.map((g) => [gameKey(g), JSON.stringify(g.raw)]));
+  const newKeys = new Set(parsed.allGames.map(gameKey));
+  p.added = parsed.allGames.filter((g) => !oldByKey.has(gameKey(g)));
+  const removed = state.allGames.filter((g) => !newKeys.has(gameKey(g)));
+  const changed = parsed.allGames.filter((g) => oldByKey.has(gameKey(g)) && oldByKey.get(gameKey(g)) !== JSON.stringify(g.raw));
+  const errs = [...parsed.issues, ...parsed.extraIssues].filter((i) => i.level !== 'info');
+  const r = S.record(parsed.allGames);
+  const min = Math.round((Date.now() - file.lastModified) / 6e4);
+  const ageTxt = min < 60 ? `vor ${min} Min.` : min < 1440 ? `vor ${Math.round(min / 60)} Std.` : `am ${fmt(new Date(file.lastModified))}`;
+  const anyChange = p.added.length || changed.length || removed.length;
+  openUpload(`
+    <p class="small muted" style="margin-bottom:10px">📄 <b>${esc(file.name)}</b> · gespeichert ${ageTxt}</p>
+    ${file.name !== U.EXPECTED_NAME ? `<div class="msg warn">Der Dateiname weicht von „${esc(U.EXPECTED_NAME)}“ ab – richtige Datei?</div>` : ''}
+    <div class="diff-grid">
+      <div class="fact"><span class="num">${p.added.length}</span><span class="lbl">neue Spiele</span></div>
+      <div class="fact"><span class="num">${changed.length}</span><span class="lbl">geänderte Zeilen</span></div>
+      <div class="fact"><span class="num">${removed.length}</span><span class="lbl">entfernte Spiele</span></div>
+    </div>
+    ${p.added.length ? `<ul class="mini" style="margin-bottom:12px">${p.added.map((g) => (g.res && g.date
+      ? miniGame(g, ` <span class="muted small">· Nr. ${g.nr ?? '–'}</span>`)
+      : `<li><span class="t">${esc(g.raw.spiel)}</span></li>`)).join('')}</ul>` : ''}
+    <p class="small">Danach: <b>${parsed.allGames.length} Spiele</b> · ${r.S} S / ${r.U} U / ${r.N} N (inkl. Testspiele)</p>
+    ${errs.length
+      ? `<div class="msg warn"><b>Datencheck: ${errs.length} ${errs.length === 1 ? 'Auffälligkeit' : 'Auffälligkeiten'}</b><br>${errs.slice(0, 5).map((i) => `Nr. ${i.g.nr ?? '–'}: ${esc(i.msg)}`).join('<br>')}${errs.length > 5 ? '<br>…' : ''}</div>`
+      : '<div class="msg ok">Datencheck: keine Fehler.</div>'}
+    <div class="actions">
+      <button class="btn primary" id="do-upload">${anyChange ? 'Hochladen' : 'Trotzdem hochladen'}</button>
+      <button class="btn" id="pick-file">Andere Datei</button>
+      <button class="btn link" id="open-settings">Einstellungen</button>
+    </div>`);
+}
+
+async function doUpload() {
+  const { buf, parsed, added } = state.pendingUpload;
+  const btn = $('#do-upload');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Lade hoch …'; }
+  const nrs = added.map((g) => g.nr).filter(Boolean);
+  const msg = !nrs.length ? 'Excel aktualisiert'
+    : `Excel aktualisiert: ${nrs.length === 1 ? `Spiel Nr. ${nrs[0]}` : `Spiele Nr. ${Math.min(...nrs)}–${Math.max(...nrs)}`}`;
+  try {
+    const res = await U.uploadExcel(buf, msg);
+    ingest(parsed);
+    render();
+    state.pendingUpload = null;
+    if (res.status === 'unchanged') {
+      openUpload('<div class="msg ok"><b>Schon aktuell.</b> Auf GitHub liegt bereits genau diese Datei – nichts hochgeladen.</div>');
+    } else {
+      upDlg().close();
+      toast(`✓ Hochgeladen. In ca. 1 Minute ist die Seite auf allen Geräten aktuell.${res.url ? ` <a href="${esc(res.url)}" target="_blank" rel="noopener">Commit ansehen</a>` : ''}`, 9000);
+    }
+  } catch (e) {
+    console.error(e);
+    openUpload(`<div class="msg err"><b>Hochladen fehlgeschlagen.</b><br>${esc(e.message)}</div>
+      <div class="actions">${/Token/.test(e.message)
+        ? '<button class="btn primary" id="open-settings">Token ändern</button>'
+        : '<button class="btn primary" id="do-upload">Nochmal versuchen</button>'}</div>`);
+  }
+}
+
+$('#upload-btn').addEventListener('click', () => startUpload());
+$('#upload-dialog').addEventListener('click', async (e) => {
+  if (e.target.id === 'upload-dialog') return e.target.close();
+  const b = e.target.closest('button');
+  switch (b?.id) {
+    case 'token-save': return saveToken();
+    case 'token-clear': U.clearToken(); return viewTokenSetup();
+    case 'file-forget': await U.forgetFile(); b.textContent = 'Vergessen ✓'; return;
+    case 'pick-file': return startUpload({ forcePick: true });
+    case 'open-settings': return viewTokenSetup();
+    case 'do-upload': return doUpload();
+  }
+});
+$('#upload-dialog').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'token-input') { e.preventDefault(); saveToken(); }
+});
+
 // ---------- Testspiele ----------
 const isFriendly = (g) => /friendly|testspiel|abschied/i.test(g.comp);
 
@@ -549,6 +706,34 @@ async function waitForLibs() {
   if (!window.XLSX) throw new Error('Excel-Bibliothek (SheetJS) konnte nicht geladen werden.');
 }
 
+// Excel-Inhalt parsen und prüfen, ohne den State zu verändern (auch für die Upload-Vorschau)
+function parseWorkbook(buf) {
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+  const mainName = wb.SheetNames.find((n) => /haupt/i.test(n)) || wb.SheetNames[0];
+  const extraName = wb.SheetNames.find((n) => /u23|all ?stars/i.test(n));
+  const ctx = { clubs: state.clubs, stadiums: state.stadiums };
+  const allGames = parseSheet(wb.Sheets[mainName], { ...ctx, kind: 'main' });
+  const allExtra = extraName ? parseSheet(wb.Sheets[extraName], { ...ctx, kind: 'extra' }) : [];
+  return {
+    allGames, allExtra,
+    issues: validate(allGames, { clubs: state.clubs, players: state.players, kind: 'main' }),
+    extraIssues: validate(allExtra, { clubs: state.clubs, players: state.players, kind: 'extra' }).filter((i) => i.level !== 'info'),
+  };
+}
+
+// Geparste Daten übernehmen: State, Header, Datencheck-Badge, Fußzeile
+function ingest(parsed) {
+  Object.assign(state, parsed);
+  applyFriendlyFilter();
+  const last = state.allGames.at(-1);
+  const nErr = [...state.issues, ...state.extraIssues].filter((i) => i.level !== 'info').length;
+  const badge = $('#check-badge');
+  badge.hidden = false;
+  badge.textContent = nErr || '✓';
+  badge.classList.toggle('ok', !nErr);
+  $('#foot').innerHTML = `Letztes Spiel: ${fmt(last?.date)} · Daten aus <code>${DATA_URL}</code> · Logos &amp; Fotos: Wikipedia/Wikimedia Commons · privates, nicht-kommerzielles Projekt`;
+}
+
 async function load() {
   try {
     const [clubsJson, playersJson, buf] = await Promise.all([
@@ -560,24 +745,8 @@ async function load() {
     state.clubs = clubsJson.clubs;
     state.stadiums = Object.fromEntries(Object.entries(clubsJson.stadiums || {}).filter(([k]) => !k.startsWith('_')));
     state.players = makePlayers(playersJson);
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-    const mainName = wb.SheetNames.find((n) => /haupt/i.test(n)) || wb.SheetNames[0];
-    const extraName = wb.SheetNames.find((n) => /u23|all ?stars/i.test(n));
-    const ctx = { clubs: state.clubs, stadiums: state.stadiums };
-    state.allGames = parseSheet(wb.Sheets[mainName], { ...ctx, kind: 'main' });
-    state.allExtra = extraName ? parseSheet(wb.Sheets[extraName], { ...ctx, kind: 'extra' }) : [];
-    state.issues = validate(state.allGames, { clubs: state.clubs, players: state.players, kind: 'main' });
-    state.extraIssues = validate(state.allExtra, { clubs: state.clubs, players: state.players, kind: 'extra' }).filter((i) => i.level !== 'info');
     try { state.withFriendlies = localStorage.getItem('withFriendlies') === '1'; } catch { /* ohne Storage */ }
-    applyFriendlyFilter();
-
-    const last = state.allGames.at(-1);
-    const nErr = [...state.issues, ...state.extraIssues].filter((i) => i.level !== 'info').length;
-    const badge = $('#check-badge');
-    badge.hidden = false;
-    badge.textContent = nErr || '✓';
-    badge.classList.toggle('ok', !nErr);
-    $('#foot').innerHTML = `Letztes Spiel: ${fmt(last?.date)} · Daten aus <code>${DATA_URL}</code> · Logos &amp; Fotos: Wikipedia/Wikimedia Commons · privates, nicht-kommerzielles Projekt`;
+    ingest(parseWorkbook(buf));
     window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
     $('#hero-record').addEventListener('change', (e) => {
       if (e.target.id !== 'toggle-friendlies') return;

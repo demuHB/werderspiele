@@ -27,6 +27,9 @@
         <h1>Meine Werder-Spiele</h1>
         <p id="hero-sub">Lade Daten …</p>
       </div>
+      <button id="upload-btn" class="icon-btn" type="button" aria-label="Excel aktualisieren" title="Excel aktualisieren">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M11 16V7.85l-2.6 2.6L7 9l5-5 5 5-1.4 1.45-2.6-2.6V16h-2Zm-5 4q-.82 0-1.41-.59Q4 18.83 4 18v-3h2v3h12v-3h2v3q0 .82-.59 1.41Q18.83 20 18 20H6Z"/></svg>
+      </button>
       <button id="theme-toggle" class="icon-btn" type="button" aria-label="Hell/Dunkel umschalten" title="Hell/Dunkel">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
       </button>
@@ -52,6 +55,13 @@
     <div id="game-dialog-body"></div>
     <form method="dialog"><button class="close-btn" aria-label="Schließen">✕</button></form>
   </dialog>
+
+  <dialog id="upload-dialog" aria-labelledby="upload-title">
+    <div class="dlg-head"><div class="dlg-title" id="upload-title">Excel aktualisieren</div></div>
+    <div class="dlg-body" id="upload-body"></div>
+    <form method="dialog"><button class="close-btn" aria-label="Schließen">✕</button></form>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <footer class="foot" id="foot"></footer>
 </body>

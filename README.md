@@ -23,8 +23,11 @@ Die Seite ist rein statisch. Sie liest die Excel-Datei `data/werderspiele.xlsx` 
 
    Markierungen bei Torschützen: `(2)` für die Anzahl, `(ET)` für ein Eigentor (der Spieler steht auf der Seite des Teams, dem das Tor gutgeschrieben wird), `(FE)` für Foulelfmeter und `(HE)` für Handelfmeter.
 
-2. Die Datei hochladen. Dafür gibt es zwei Wege:
-   - **Browser (auch am Handy):** Im Repo `data/` öffnen, dann **Add file → Upload files**. Die Datei `werderspiele.xlsx` hineinziehen (gleicher Name) und **Commit changes** klicken.
+2. Die Datei hochladen:
+   - **Am einfachsten im Dashboard:** Oben rechts auf den **Upload-Pfeil** klicken. Das Dashboard zeigt eine Vorschau (neue Spiele, Datencheck), „Hochladen“ committet die Datei als `data/werderspiele.xlsx`. Der Dateiname der Excel ist dabei egal.
+     - **Einmalig** fragt das Dashboard nach einem GitHub-Token. Anlegen unter [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new): „Only select repositories“ → `demuHB/werderspiele`, Permissions → Repository → **Contents: Read and write**. Der Token liegt nur im Browser (localStorage), nie im Repo.
+     - **Einmalig** wählst du die Datei aus, z. B. `B:\!Altes C\Dokumente\Alle Werder Spiele Dennis.xlsx`. Chrome und Edge merken sich die Datei, danach reicht ein Klick plus „Zugriff erlauben“. Andere Browser fragen jedes Mal nach der Datei.
+   - **Alternativ im Browser auf GitHub:** Im Repo `data/` öffnen, dann **Add file → Upload files**. Die Datei als `werderspiele.xlsx` hineinziehen (gleicher Name) und **Commit changes** klicken.
    - **Am PC mit Git:** Diese Befehle im Repo-Ordner ausführen:
      ```
      git add data/werderspiele.xlsx
