@@ -53,9 +53,13 @@ function gameCard(g) {
   </button>`;
 }
 
+// Kurzes Datum (TT.MM.JJ) wird auf dem Handy per CSS statt des langen gezeigt
+const fmtShort = (d) => (d ? fmt(d).replace(/\.(\d\d)(\d\d)$/, '.$2') : '–');
+
+// extra: optionale zweite Zeile (z. B. Torschütze oder Besuchsnummer)
 function miniGame(g, extra = '') {
-  return `<li data-game="${g.kind}:${g.row}"><span class="d">${fmt(g.date)}</span>${crest(g.opp, 20)}
-    <span class="t">${g.venue === 'H' ? 'vs.' : g.venue === 'N' ? 'gg.' : '@'} ${esc(short(g.opp))}${extra}</span>
+  return `<li data-game="${g.kind}:${g.row}"><span class="d"><span class="d-long">${fmt(g.date)}</span><span class="d-short">${fmtShort(g.date)}</span></span>${crest(g.opp, 20)}
+    <span class="t"><span class="t1">${g.venue === 'H' ? 'vs.' : g.venue === 'N' ? 'gg.' : '@'} ${esc(short(g.opp))}</span>${extra ? `<span class="t2">${extra}</span>` : ''}</span>
     <span class="res-pill ${g.outcome}">${g.outcome}</span><span class="r">${g.gf}:${g.ga}</span></li>`;
 }
 
@@ -151,7 +155,7 @@ function viewOverview() {
   <div class="card"><div class="chart-box tall"><canvas id="ch-seasons" aria-label="Spiele pro Saison nach Ergebnis"></canvas></div></div>
 
   <h2>Meilensteine</h2>
-  <div class="card"><p class="section-sub" style="margin:0 0 8px">nach Stadionbesuch, inkl. Testspielen</p><ul class="mini">${miles.map((x) => miniGame(x, ` <span class="muted small">· Besuch Nr. ${x.nr}</span>`)).join('')}</ul></div>`;
+  <div class="card"><p class="section-sub" style="margin:0 0 8px">nach Stadionbesuch, inkl. Testspielen</p><ul class="mini">${miles.map((x) => miniGame(x, `Besuch Nr. ${x.nr}`)).join('')}</ul></div>`;
 }
 function afterOverview() {
   const seasons = S.bySeason(state.games);
@@ -277,7 +281,7 @@ function viewStats() {
         <div class="fact"><span class="num">${wTop.length}</span><span class="lbl">verschiedene Werder-Torschützen</span></div>
       </div>
       <h3 style="margin-top:18px">Hattricks</h3>
-      <ul class="mini">${gs.hattricks.map(({ g: x, s }) => miniGame(x, ` · <b>${esc(fullName(s.name, s.team))}</b> (${s.n})`)).join('')}</ul>
+      <ul class="mini">${gs.hattricks.map(({ g: x, s }) => miniGame(x, `<b>${esc(fullName(s.name, s.team))}</b> (${s.n})`)).join('')}</ul>
     </div>
   </div>
 
@@ -302,8 +306,8 @@ function viewStats() {
     <div class="card"><h3>Häufigste Ergebnisse</h3><p class="section-sub">aus Werder-Sicht</p>${hbars(lines.slice(0, 10))}</div>
   </div>
   <div class="grid grid-2" style="margin-top:14px">
-    <div class="card"><h3>Zur Halbzeit gedreht</h3><p class="section-sub">Rückstand zur Pause, am Ende gewonnen: ${rec.turnarounds.length}×</p><ul class="mini">${rec.turnarounds.map((x) => miniGame(x, ` <span class="muted small">(${x.htf}:${x.hta})</span>`)).join('')}</ul></div>
-    <div class="card"><h3>Führung verspielt</h3><p class="section-sub">Führung zur Pause, am Ende verloren: ${rec.thrownAway.length}×</p><ul class="mini">${rec.thrownAway.map((x) => miniGame(x, ` <span class="muted small">(${x.htf}:${x.hta})</span>`)).join('')}</ul></div>
+    <div class="card"><h3>Zur Halbzeit gedreht</h3><p class="section-sub">Rückstand zur Pause, am Ende gewonnen: ${rec.turnarounds.length}×</p><ul class="mini">${rec.turnarounds.map((x) => miniGame(x, `Halbzeit ${x.htf}:${x.hta}`)).join('')}</ul></div>
+    <div class="card"><h3>Führung verspielt</h3><p class="section-sub">Führung zur Pause, am Ende verloren: ${rec.thrownAway.length}×</p><ul class="mini">${rec.thrownAway.map((x) => miniGame(x, `Halbzeit ${x.htf}:${x.hta}`)).join('')}</ul></div>
   </div>
 
   <h2>Kalender</h2>
@@ -610,7 +614,7 @@ function viewPreview() {
       <div class="fact"><span class="num">${removed.length}</span><span class="lbl">entfernte Spiele</span></div>
     </div>
     ${p.added.length ? `<ul class="mini" style="margin-bottom:12px">${p.added.map((g) => (g.res && g.date
-      ? miniGame(g, ` <span class="muted small">· Nr. ${g.nr ?? '–'}</span>`)
+      ? miniGame(g, `Nr. ${g.nr ?? '–'}`)
       : `<li><span class="t">${esc(g.raw.spiel)}</span></li>`)).join('')}</ul>` : ''}
     <p class="small">Danach: <b>${parsed.allGames.length} Spiele</b> · ${r.S} S / ${r.U} U / ${r.N} N (inkl. Testspiele)</p>
     ${errs.length
