@@ -48,7 +48,7 @@
   "img": "assets/players/ailton.jpg",
   "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/14/Ailton-msvduisburg.jpg/330px-Ailton-msvduisburg.jpg?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
  },
- "Akpobrorie@VfL Wolfsburg": {
+ "Akpoborie@VfL Wolfsburg": {
   "full": "Jonathan Akpoborie",
   "wiki": "Jonathan Akpoborie",
   "img": "assets/players/jonathan-akpoborie.jpg",
@@ -973,12 +973,12 @@
   "img": "assets/players/jean-philippe-gbamin.jpg",
   "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/64/Jean-Philippe_Gbamin_2022.jpg/330px-Jean-Philippe_Gbamin_2022.jpg?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
  },
- "Gebhardt@1. FC Nürnberg": {
-  "full": "Robert Gebhardt",
-  "wiki": "Robert Gebhardt",
-  "img": null,
-  "thumb": null,
-  "noimg": "checked-free"
+ "Gebhart@1. FC Nürnberg": {
+  "full": "Timo Gebhart",
+  "wiki": "Timo Gebhart",
+  "img": "assets/players/timo-gebhart.jpg",
+  "manual": true,
+  "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/63/TimoGebhart.jpg/330px-TimoGebhart.jpg?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
  },
  "Gebre Selassie@Werder": {
   "full": "Theodor Gebre Selassie",
@@ -1193,7 +1193,7 @@
   "img": "assets/players/mike-hanke.jpg",
   "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/df/Mike_Hanke_cropped.jpg/330px-Mike_Hanke_cropped.jpg?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
  },
- "Hanson-Aaröen@Werder": {
+ "Hansen-Aarøen@Werder": {
   "full": "Hanson-Aaröen",
   "wiki": null,
   "img": null
@@ -1731,10 +1731,12 @@
   "img": "assets/players/martin-latka.jpg",
   "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/50/Martin-Latka.jpg/330px-Martin-Latka.jpg?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
  },
- "Latorre@Valencia CF": {
-  "full": "Latorre",
-  "wiki": null,
-  "img": null
+ "Lato@Valencia CF": {
+  "full": "Toni Lato",
+  "wiki": "Toni Lato",
+  "img": "assets/players/toni-lato.jpg",
+  "manual": true,
+  "thumb": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d9/Toni_Lato_2020.png/330px-Toni_Lato_2020.png?utm_source=de.wikipedia.org&utm_campaign=api&utm_content=thumbnail"
  },
  "Leckie@Hertha BSC": {
   "full": "Mathew Leckie",
