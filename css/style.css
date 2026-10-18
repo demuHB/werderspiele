@@ -69,6 +69,8 @@ button, select, input { font: inherit; color: inherit; }
 .icon-btn:hover { background: rgba(255,255,255,.22); }
 .hero-record { max-width: 1180px; margin: 14px auto 0; display: flex; gap: 8px; flex-wrap: wrap; }
 .chip { background: rgba(255,255,255,.12); border-radius: 999px; padding: 4px 12px; font-size: 13px; white-space: nowrap; }
+a.chip { color: inherit; text-decoration: none; }
+a.chip:hover { background: rgba(255,255,255,.24); }
 .chip.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; background: rgba(255,255,255,.2); user-select: none; }
 .chip.toggle:hover { background: rgba(255,255,255,.3); }
 .chip.toggle input { margin: 0; width: 15px; height: 15px; accent-color: #fff; cursor: pointer; }
@@ -157,7 +159,8 @@ main { max-width: 1180px; margin: 0 auto; padding: 8px 16px 40px; }
   padding: 6px 8px; border-radius: 8px; background: var(--surface-2);
 }
 .score small { display: block; font: 500 11px Inter, sans-serif; color: var(--muted); margin-top: 2px; }
-.res-pill { flex: none; display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 6px; color: #fff; font: 700 13px "Barlow Condensed", sans-serif; }
+/* Buchstabe optisch mittig: Grid-Zentrierung; padding-bottom gleicht den Schrift-Versatz von Barlow Condensed aus (im Browser ausgemessen) */
+.res-pill { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; padding-bottom: .5px; box-sizing: border-box; line-height: 1; vertical-align: middle; border-radius: 6px; color: #fff; font: 700 13px "Barlow Condensed", sans-serif; }
 .res-pill.S { background: var(--win); } .res-pill.U { background: var(--draw); } .res-pill.N { background: var(--loss); }
 .season-head { margin: 18px 0 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .season-head h3 { margin: 0; }
@@ -300,3 +303,17 @@ dialog::backdrop { background: rgba(7, 42, 24, .55); backdrop-filter: blur(2px);
 .toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50;
   background: var(--green-dark); color: #fff; padding: 10px 16px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 14px; max-width: calc(100vw - 32px); }
 .toast a { color: var(--mint); }
+
+/* ===== Klickbare Statistiken ===== */
+.clickable, [data-go] { cursor: pointer; }
+.kpi.clickable, .fact.clickable, .card.clickable { transition: box-shadow .15s, transform .15s; }
+.kpi.clickable:hover, .card.clickable:hover { box-shadow: 0 0 0 2px var(--mint), var(--shadow); }
+.fact.clickable:hover { box-shadow: 0 0 0 2px var(--mint); }
+.rank li.clickable, .hbar.clickable, tr[data-go] { border-radius: 8px; }
+.rank li.clickable:hover, .hbar.clickable:hover { background: var(--surface-2); }
+.num-link, .link { color: inherit; text-decoration: underline; text-decoration-color: var(--mint); text-underline-offset: 3px; cursor: pointer; }
+.num-link:hover, .link:hover { color: var(--accent); }
+[data-go]:focus-visible, li[data-game]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drill-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.chip-filter { border: 1px solid var(--accent); background: var(--surface); color: var(--accent); border-radius: 999px; padding: 5px 12px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.chip-filter:hover { background: var(--accent); color: #fff; }

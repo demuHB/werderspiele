@@ -48,7 +48,9 @@ export function validate(games, { clubs, players, kind = 'main' }) {
         add('error', g, 'Halbzeitstand höher als Endstand');
       if (!g.res.ht && g.res.home + g.res.away > 0) add('info', g, 'Kein Halbzeitstand angegeben');
       for (const s of g.scorers) {
-        if (s.unknownTags.length) add('warn', g, `Unbekannte Markierung „(${s.unknownTags.join(', ')})“ bei ${s.name} (erlaubt: Zahl, ET, FE, HE)`);
+        if (s.unknownTags.length) add('warn', g, `Unbekannte Markierung „${s.unknownTags.join(', ')}“ bei ${s.name} (erlaubt: Anzahl, FE, HE, ET – z. B. „(3, FE)“)`);
+        if (s.penGoals > s.n) add('error', g, `${s.name}: mehr Elfmetertore (${s.penGoals}) als Tore (${s.n})`);
+        if (s.own && s.penGoals) add('warn', g, `${s.name}: Eigentor und Elfmeter in einer Angabe`);
         if (/[.;]/.test(s.name.replace(/^[A-ZÄÖÜ]\.\s/, ''))) add('warn', g, `Verdächtiges Zeichen im Namen „${s.name}“ (Komma vergessen?)`);
         // "Bartels Kruse": zwei großgeschriebene Wörter, keine Initiale, nicht als Spieler bekannt
         const words = s.name.replace(/^[A-ZÄÖÜ]\.\s/, '').split(/\s+/);

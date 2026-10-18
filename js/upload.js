@@ -75,26 +75,40 @@ function pickViaInput() {
   });
 }
 
+// Warum die gemerkte Datei nicht genutzt werden konnte (wird im Dialog angezeigt), sonst ''
+export let fileNote = '';
+// Name der gemerkten Datei (für die Einstellungen) oder null
+export async function rememberedName() { return (await loadHandle())?.name ?? null; }
+
+const PICKER_TYPES = [{ description: 'Excel-Datei', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }];
+
 // Gemerkte Datei verwenden (nach Erlaubnis), sonst auswählen lassen. -> File | null
 export async function getFile({ forcePick = false } = {}) {
+  fileNote = '';
   if (!canRemember()) return pickViaInput();
-  if (!forcePick) {
-    const handle = await loadHandle();
-    if (handle) {
-      try {
-        let perm = await handle.queryPermission({ mode: 'read' });
-        if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
-        if (perm === 'granted') return await handle.getFile();
-      } catch { /* Datei verschoben/gelöscht -> neu wählen */ }
+  try { await navigator.storage?.persist?.(); } catch { /* egal */ }
+  const handle = await loadHandle();
+  if (!handle) fileNote = 'Es war noch keine Datei gemerkt – ab jetzt wird diese Datei verwendet.';
+  if (handle && !forcePick) {
+    try {
+      let perm = await handle.queryPermission({ mode: 'read' });
+      if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
+      if (perm === 'granted') return await handle.getFile();
+      fileNote = 'Der Zugriff auf die gemerkte Datei wurde nicht erlaubt. Tipp: Im Browser-Hinweis „Bei jedem Besuch zulassen“ wählen.';
+    } catch (e) {
+      fileNote = `Die gemerkte Datei „${handle.name}“ konnte nicht geöffnet werden (${e?.name || 'Fehler'}) – z. B. weil das Laufwerk nicht verbunden ist. Bitte neu auswählen.`;
     }
   }
+  // Dateidialog startet im Ordner der gemerkten Datei (falls vorhanden), sonst in "Dokumente"
+  const open = (startIn) => window.showOpenFilePicker({ id: 'werderspiele-excel', startIn, multiple: false, types: PICKER_TYPES });
   try {
-    const [handle] = await window.showOpenFilePicker({
-      id: 'werderspiele-excel', startIn: 'documents', multiple: false,
-      types: [{ description: 'Excel-Datei', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] } }],
-    });
-    await saveHandle(handle);
-    return await handle.getFile();
+    let picked;
+    try { [picked] = await open(handle || 'documents'); } catch (e) {
+      if (e?.name === 'AbortError' || !handle) throw e;
+      [picked] = await open('documents'); // gemerkter Ordner nicht erreichbar
+    }
+    await saveHandle(picked);
+    return await picked.getFile();
   } catch (e) {
     if (e?.name === 'AbortError') return null;
     throw e;

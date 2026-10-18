@@ -31,26 +31,58 @@ export function parseResult(s) {
   return r;
 }
 
-// "Pizarro (2), Kruse (FE), Naldo (ET)" -> [{name, n, own, pen}]
+// An Kommas trennen, aber nicht innerhalb von Klammern: "Ailton (3, FE), Micoud" -> ["Ailton (3, FE)", "Micoud"]
+export function splitOutsideParens(txt) {
+  const parts = [];
+  let depth = 0, cur = '';
+  for (const ch of String(txt || '')) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+// Ein Torschütze mit Klammer-Angaben:
+//   "Pizarro (2)"       -> 2 Tore
+//   "Kruse (FE)"        -> 1 Tor, davon 1 Foulelfmeter
+//   "Ailton (3, FE)"    -> 3 Tore, davon 1 Foulelfmeter
+//   "Ailton (3, 2 FE)"  -> 3 Tore, davon 2 Foulelfmeter
+//   "Naldo (ET)"        -> Eigentor (Spieler gehört zum anderen Team)
+// -> [{name, n, own, pen, penGoals, marks: {FE, HE, ET}, unknownTags}]
 export function parseScorerList(txt) {
   const out = [];
-  for (let p of String(txt || '').split(',')) {
+  for (let p of splitOutsideParens(txt)) {
     p = p.trim();
     if (!p || p === '/' || p === '*') continue;
-    const tags = [...p.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim());
+    const items = [...p.matchAll(/\(([^)]*)\)/g)].flatMap((m) => m[1].split(',').map((t) => t.trim()).filter(Boolean));
     const name = p.replace(/\s*\([^)]*\)/g, '').trim();
-    let n = 1;
-    for (const t of tags) if (/^\d+$/.test(t)) n = +t;
+    let n = null;
+    const marks = { FE: 0, HE: 0, ET: 0 };
+    const unknownTags = [];
+    for (const t of items) {
+      const m = t.match(/^(\d+)?\s*([A-Za-z]+)?$/);
+      if (m && m[1] && !m[2]) n = +m[1];                                   // "3"
+      else if (m && m[2] && MARKERS.includes(m[2].toUpperCase())) marks[m[2].toUpperCase()] += m[1] ? +m[1] : 1; // "FE", "2 FE"
+      else unknownTags.push(t);
+    }
+    if (n == null) n = Math.max(1, marks.FE + marks.HE, marks.ET);
+    const penGoals = marks.FE + marks.HE;
     out.push({
       name, n,
-      own: tags.includes('ET'),
-      pen: tags.includes('FE') || tags.includes('HE'),
-      tags: tags.filter((t) => MARKERS.includes(t)),
-      unknownTags: tags.filter((t) => !/^\d+$/.test(t) && !MARKERS.includes(t)),
+      own: marks.ET > 0,
+      pen: penGoals > 0,
+      penGoals,
+      marks,
+      unknownTags,
     });
   }
   return out;
 }
+
+// Anzeige der Markierungen, z. B. ["FE"] oder ["2 FE", "HE"]
+export const markLabels = (s) => MARKERS.filter((k) => s.marks?.[k]).map((k) => (s.marks[k] > 1 && k !== 'ET' ? `${s.marks[k]} ${k}` : k));
 
 function splitTeams(f) {
   const parts = String(f || '').split(' - ').map((s) => s.trim()).filter(Boolean);

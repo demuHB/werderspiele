@@ -1,4 +1,4 @@
-import { parseSheet, isWerder } from './parse.js';
+import { parseSheet, isWerder, markLabels } from './parse.js';
 import * as S from './stats.js';
 import { validate, fmt } from './validate.js';
 import * as U from './upload.js';
@@ -37,6 +37,27 @@ function avatar(name, team, size = 40) {
 
 const fullName = (name, team) => state.players.lookup(name, team)?.full || name;
 
+// Klickbar machen: führt zur Spielliste mit diesen Filtern (oder mit {tab} zu einem anderen Tab)
+const go = (params) => ` data-go="${esc(new URLSearchParams(params).toString())}" role="link" tabindex="0"`;
+const scorerGo = (t, werder) => ({ player: t.key, pside: werder ? 'w' : 'o', label: fullName(t.name, werder ? 'Werder' : t.team) });
+
+// Beschriftung der Zusatz-Filter (Chips über der Spielliste)
+function drillLabel(k, f) {
+  const v = f[k];
+  switch (k) {
+    case 'wd': return S.WEEKDAYS[+v];
+    case 'month': return S.MONTHS[+v];
+    case 'year': return `Jahr ${v}`;
+    case 'age': return `Mit ${v} Jahren`;
+    case 'day': return `Am ${v}`;
+    case 'score': return `Ergebnis ${v}`;
+    case 'player': return `Tore: ${f.label || v.split('@')[0]}${f.pside === 'w' ? ' (für Werder)' : f.pside === 'o' ? ' (gegen Werder)' : ''}`;
+    case 'fact': return S.FACTS[v]?.label || v;
+    case 'rows': return f.label || 'Auswahl';
+    default: return v;
+  }
+}
+
 function resultText(g) {
   if (!g.res) return esc(g.raw.ergebnis);
   return `${g.res.home}:${g.res.away}`;
@@ -54,6 +75,7 @@ function gameCard(g) {
 }
 
 // Kurzes Datum (TT.MM.JJ) wird auf dem Handy per CSS statt des langen gezeigt
+const rowsGo = (games, label) => ({ rows: games.map((g) => g.row).join(','), label });
 const fmtShort = (d) => (d ? fmt(d).replace(/\.(\d\d)(\d\d)$/, '.$2') : '–');
 
 // extra: optionale zweite Zeile (z. B. Torschütze oder Besuchsnummer)
@@ -70,14 +92,14 @@ function sunBar(r) {
     <div class="legend"><span><i style="background:var(--win)"></i>${r.S} Siege</span><span><i style="background:var(--draw)"></i>${r.U} Unentschieden</span><span><i style="background:var(--loss)"></i>${r.N} Niederlagen</span></div>`;
 }
 
-function hbars(entries, { label = (k) => k, max } = {}) {
+function hbars(entries, { label = (k) => k, max, to } = {}) {
   const m = max ?? Math.max(1, ...entries.map((e) => e[1]));
-  return `<div class="hbars">${entries.map(([k, v]) => `<div class="hbar" title="${esc(label(k))}: ${v}"><span>${esc(label(k))}</span><div class="track"><div class="fill" style="width:${(v / m) * 100}%"></div></div><span class="v">${v}</span></div>`).join('')}</div>`;
+  return `<div class="hbars">${entries.map(([k, v]) => `<div class="hbar${to ? ' clickable' : ''}" title="${esc(label(k))}: ${v}"${to ? go(to(k)) : ''}><span>${esc(label(k))}</span><div class="track"><div class="fill" style="width:${(v / m) * 100}%"></div></div><span class="v">${v}</span></div>`).join('')}</div>`;
 }
 
 function rankList(items, { limit = 10, id }) {
   const max = items[0]?.value || 1;
-  const row = (it, i) => `<li class="podium-${i + 1}" ${it.game ? `data-game="${it.game}"` : ''}><span class="pos">${i + 1}</span>${it.icon}
+  const row = (it, i) => `<li class="podium-${i + 1}${it.go ? ' clickable' : ''}"${it.go ? go(it.go) : ''}><span class="pos">${i + 1}</span>${it.icon}
       <div class="who"><b>${esc(it.title)}</b><small>${it.sub || ''}</small><div class="bar" style="width:${(it.value / max) * 100}%"></div></div>
       <span class="val">${it.value}</span></li>`;
   const more = items.length > limit ? `<button class="btn more-btn" data-more="${id}">Alle ${items.length} anzeigen</button>` : '';
@@ -86,7 +108,7 @@ function rankList(items, { limit = 10, id }) {
 }
 
 // ---------- Charts ----------
-function chart(canvasId, config) {
+function chart(canvasId, config, onPick) {
   const el = document.getElementById(canvasId);
   if (!el || !window.Chart) return;
   const grid = css('--line'), text = css('--text-2');
@@ -97,6 +119,15 @@ function chart(canvasId, config) {
     interaction: { mode: 'index', intersect: false },
     plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 3 } }, tooltip: { cornerRadius: 8, padding: 10 } },
   }, config.options || {});
+  if (onPick) {
+    config.options.onClick = (evt) => {
+      const c = evt.chart;
+      const hit = c.getElementsAtEventForMode(evt.native, 'nearest', { intersect: true }, false);
+      const els = hit.length ? hit : c.getElementsAtEventForMode(evt.native, 'index', { intersect: false }, false);
+      if (els.length) onPick(els[0].index, hit.length ? els[0].datasetIndex : null);
+    };
+    config.options.onHover = (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
+  }
   for (const ax of Object.values(config.options.scales || {})) {
     ax.grid = { color: grid, drawTicks: false, ...(ax.grid || {}) };
     ax.border = { display: false };
@@ -124,14 +155,14 @@ function viewOverview() {
 
   return `
   <div class="kpis">
-    <div class="kpi"><span class="num">${r.n}</span><span class="lbl">Spiele</span><span class="sub">seit ${fmt(g[0]?.date)}</span></div>
-    <div class="kpi win"><span class="num">${r.S}</span><span class="lbl">Siege</span><span class="sub">${pct(r.winPct)}</span></div>
-    <div class="kpi draw"><span class="num">${r.U}</span><span class="lbl">Unentschieden</span><span class="sub">${pct(r.U / r.n * 100)}</span></div>
-    <div class="kpi loss"><span class="num">${r.N}</span><span class="lbl">Niederlagen</span><span class="sub">${pct(r.N / r.n * 100)}</span></div>
-    <div class="kpi"><span class="num">${r.gf}:${r.ga}</span><span class="lbl">Tore</span><span class="sub">Ø ${dec((r.gf + r.ga) / r.n, 1)} pro Spiel</span></div>
-    <div class="kpi"><span class="num">${dec(r.ppg)}</span><span class="lbl">Punkte / Spiel</span><span class="sub">${r.pts} Punkte</span></div>
-    <div class="kpi"><span class="num">${st.length}</span><span class="lbl">Stadien</span><span class="sub">${opp.length} Gegner</span></div>
-    <div class="kpi"><span class="num">${seasons.length}</span><span class="lbl">Saisons</span><span class="sub">Ø ${dec(r.n / seasons.length, 1)} Spiele</span></div>
+    <div class="kpi clickable"${go({})}><span class="num">${r.n}</span><span class="lbl">Spiele</span><span class="sub">seit ${fmt(g[0]?.date)}</span></div>
+    <div class="kpi win clickable"${go({ outcome: 'S' })}><span class="num">${r.S}</span><span class="lbl">Siege</span><span class="sub">${pct(r.winPct)}</span></div>
+    <div class="kpi draw clickable"${go({ outcome: 'U' })}><span class="num">${r.U}</span><span class="lbl">Unentschieden</span><span class="sub">${pct(r.U / r.n * 100)}</span></div>
+    <div class="kpi loss clickable"${go({ outcome: 'N' })}><span class="num">${r.N}</span><span class="lbl">Niederlagen</span><span class="sub">${pct(r.N / r.n * 100)}</span></div>
+    <div class="kpi clickable"${go({})}><span class="num">${r.gf}:${r.ga}</span><span class="lbl">Tore</span><span class="sub">Ø ${dec((r.gf + r.ga) / r.n, 1)} pro Spiel</span></div>
+    <div class="kpi clickable"${go({})}><span class="num">${dec(r.ppg)}</span><span class="lbl">Punkte / Spiel</span><span class="sub">${r.pts} Punkte</span></div>
+    <div class="kpi clickable"${go({ tab: 'stadien' })}><span class="num">${st.length}</span><span class="lbl">Stadien</span><span class="sub">${opp.length} Gegner</span></div>
+    <div class="kpi clickable"${go({ tab: 'statistiken' })}><span class="num">${seasons.length}</span><span class="lbl">Saisons</span><span class="sub">Ø ${dec(r.n / seasons.length, 1)} Spiele</span></div>
   </div>
 
   <div class="grid grid-2" style="margin-top:14px">
@@ -143,12 +174,12 @@ function viewOverview() {
   </div>
 
   <div class="grid grid-3" style="margin-top:14px">
-    ${top ? `<div class="card highlight">${avatar(top.name, 'Werder', 56)}<div><div class="lbl">Meiste Tore gesehen</div><div class="big">${esc(fullName(top.name, 'Werder'))}</div><div class="sub">${top.goals} Tore in ${top.games.size} Spielen</div></div></div>` : ''}
-    ${fav ? `<div class="card highlight">${crest(fav.opp, 48)}<div><div class="lbl">Lieblingsgegner</div><div class="big">${esc(short(fav.opp))}</div><div class="sub">${fav.S}-${fav.U}-${fav.N} · ${dec(fav.ppg)} Pkt/Spiel</div></div></div>` : ''}
-    ${bogey ? `<div class="card highlight">${crest(bogey.opp, 48)}<div><div class="lbl">Angstgegner</div><div class="big">${esc(short(bogey.opp))}</div><div class="sub">${bogey.S}-${bogey.U}-${bogey.N} · ${dec(bogey.ppg)} Pkt/Spiel</div></div></div>` : ''}
-    <div class="card highlight">${crest('Werder Bremen', 48)}<div><div class="lbl">Längste Siegesserie</div><div class="big">${streak.best.win.length} Siege</div><div class="sub">${fmt(streak.best.win[0]?.date)} – ${fmt(streak.best.win.at(-1)?.date)}</div></div></div>
-    <div class="card highlight">${crest('Werder Bremen', 48)}<div><div class="lbl">Längste Serie ungeschlagen</div><div class="big">${streak.best.unbeaten.length} Spiele</div><div class="sub">${fmt(streak.best.unbeaten[0]?.date)} – ${fmt(streak.best.unbeaten.at(-1)?.date)}</div></div></div>
-    ${away ? `<div class="card highlight">${crest(away.games[0].opp, 48)}<div><div class="lbl">Häufigstes Auswärtsstadion</div><div class="big">${esc(away.name)}</div><div class="sub">${plural(away.n, 'Besuch', 'Besuche')}</div></div></div>` : ''}
+    ${top ? `<div class="card highlight clickable"${go(scorerGo(top, true))}>${avatar(top.name, 'Werder', 56)}<div><div class="lbl">Meiste Tore gesehen</div><div class="big">${esc(fullName(top.name, 'Werder'))}</div><div class="sub">${top.goals} Tore in ${top.games.size} Spielen</div></div></div>` : ''}
+    ${fav ? `<div class="card highlight clickable"${go({ opp: fav.opp })}>${crest(fav.opp, 48)}<div><div class="lbl">Lieblingsgegner</div><div class="big">${esc(short(fav.opp))}</div><div class="sub">${fav.S}-${fav.U}-${fav.N} · ${dec(fav.ppg)} Pkt/Spiel</div></div></div>` : ''}
+    ${bogey ? `<div class="card highlight clickable"${go({ opp: bogey.opp })}>${crest(bogey.opp, 48)}<div><div class="lbl">Angstgegner</div><div class="big">${esc(short(bogey.opp))}</div><div class="sub">${bogey.S}-${bogey.U}-${bogey.N} · ${dec(bogey.ppg)} Pkt/Spiel</div></div></div>` : ''}
+    <div class="card highlight clickable"${go(rowsGo(streak.best.win, `${streak.best.win.length} Siege in Folge`))}>${crest('Werder Bremen', 48)}<div><div class="lbl">Längste Siegesserie</div><div class="big">${streak.best.win.length} Siege</div><div class="sub">${fmt(streak.best.win[0]?.date)} – ${fmt(streak.best.win.at(-1)?.date)}</div></div></div>
+    <div class="card highlight clickable"${go(rowsGo(streak.best.unbeaten, `${streak.best.unbeaten.length} Spiele ungeschlagen`))}>${crest('Werder Bremen', 48)}<div><div class="lbl">Längste Serie ungeschlagen</div><div class="big">${streak.best.unbeaten.length} Spiele</div><div class="sub">${fmt(streak.best.unbeaten[0]?.date)} – ${fmt(streak.best.unbeaten.at(-1)?.date)}</div></div></div>
+    ${away ? `<div class="card highlight clickable"${go({ stadium: away.name })}>${crest(away.games[0].opp, 48)}<div><div class="lbl">Häufigstes Auswärtsstadion</div><div class="big">${esc(away.name)}</div><div class="sub">${plural(away.n, 'Besuch', 'Besuche')}</div></div></div>` : ''}
   </div>
 
   <h2>Spiele pro Saison</h2>
@@ -174,7 +205,7 @@ function afterOverview() {
       scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { precision: 0 } } },
       plugins: { tooltip: { callbacks: { footer: (items) => `Spiele: ${items.reduce((a, i) => a + i.raw, 0)}` } } },
     },
-  });
+  }, (i, ds) => goGames({ season: seasons[i].season, ...(ds != null ? { outcome: ['S', 'U', 'N'][ds] } : {}) }));
 }
 
 // ----- Spiele -----
@@ -201,7 +232,7 @@ function viewGames() {
 function filteredGames() {
   const f = state.gameFilter;
   const q = (f.q || '').toLowerCase().trim();
-  return state.games.filter((g) =>
+  return state.games.filter((g) => S.matchDrill(g, f, state.players) &&
     (!f.season || g.season === f.season) && (!f.comp || g.comp === f.comp) && (!f.opp || g.opp === f.opp) &&
     (!f.stadium || g.stadium === f.stadium) && (!f.venue || g.venue === f.venue) && (!f.outcome || g.outcome === f.outcome) &&
     (!q || [g.home, g.away, g.stadiumRaw, g.comp, g.season, g.raw.scorers, fmt(g.date), short(g.opp),
@@ -211,8 +242,12 @@ function renderGamesList() {
   const list = filteredGames();
   const r = S.record(list);
   const bySeason = S.groupBy([...list].reverse(), (g) => g.season);
-  const active = Object.values(state.gameFilter).some(Boolean);
+  const f = state.gameFilter;
+  const active = Object.entries(f).some(([k, v]) => k !== 'label' && k !== 'pside' && v);
+  const chips = S.DRILL_KEYS.filter((k) => f[k] != null && f[k] !== '')
+    .map((k) => `<button class="chip-filter" data-drop="${k}" title="Filter entfernen">${esc(drillLabel(k, f))} <span aria-hidden="true">✕</span></button>`).join('');
   $('#games-out').innerHTML = `
+    ${chips ? `<div class="drill-chips">${chips}</div>` : ''}
     <div class="filter-summary"><b>${plural(list.length, 'Spiel', 'Spiele')}</b>
       <span><span class="res-pill S">S</span> ${r.S}</span><span><span class="res-pill U">U</span> ${r.U}</span><span><span class="res-pill N">N</span> ${r.N}</span>
       <span>Tore ${r.gf}:${r.ga}</span><span>${dec(r.ppg)} Pkt/Spiel</span>
@@ -222,7 +257,22 @@ function renderGamesList() {
       return `<div class="season-head"><h3>Saison ${esc(season)}</h3><span class="small muted">${plural(gs.length, 'Spiel', 'Spiele')} · ${sr.S}-${sr.U}-${sr.N}</span></div>
         <div class="games">${gs.map(gameCard).join('')}</div>`;
     }).join('') : '<p class="muted">Keine Spiele gefunden.</p>'}`;
-  $('#f-reset')?.addEventListener('click', () => { state.gameFilter = {}; render(); });
+  $('#f-reset')?.addEventListener('click', () => goGames({}));
+  for (const b of document.querySelectorAll('[data-drop]')) {
+    b.addEventListener('click', () => {
+      const k = b.dataset.drop;
+      delete f[k];
+      if (k === 'player') delete f.pside;
+      if (k === 'rows' || k === 'player') delete f.label;
+      goGames({ ...f });
+    });
+  }
+  syncHash();
+}
+// Aktuelle Filter in die URL schreiben, ohne neuen Verlaufseintrag (Zurück-Button bleibt sinnvoll)
+function syncHash() {
+  const qs = new URLSearchParams(Object.entries(state.gameFilter).filter(([, v]) => v != null && v !== '')).toString();
+  history.replaceState(null, '', `#/spiele${qs ? '?' + qs : ''}`);
 }
 function afterGames() {
   const map = { 'f-q': 'q', 'f-season': 'season', 'f-comp': 'comp', 'f-opp': 'opp', 'f-stadium': 'stadium', 'f-venue': 'venue', 'f-outcome': 'outcome' };
@@ -243,10 +293,10 @@ function viewStats() {
   const scorerItem = (t, werder) => {
     const team = werder ? 'Werder' : t.team;
     const teams = [...t.teams].map(short).join(', ');
-    return { icon: avatar(t.name, team, 40), title: fullName(t.name, team), value: t.goals,
+    return { icon: avatar(t.name, team, 40), title: fullName(t.name, team), value: t.goals, go: scorerGo(t, werder),
       sub: `${werder ? '' : esc(teams) + ' · '}${plural(t.games.size, 'Spiel', 'Spielen')}${t.pens ? ` · ${t.pens} Elfm.` : ''}${t.hattricks ? ` · ${t.hattricks}× Hattrick` : ''}` };
   };
-  const streakFact = (arr, lbl) => `<div class="fact"><span class="num">${arr.length}</span><span class="lbl">${lbl}</span><div class="small muted">${arr.length ? `${fmt(arr[0].date)} – ${fmt(arr.at(-1).date)}` : '–'}</div></div>`;
+  const streakFact = (arr, lbl) => `<div class="fact clickable"${go(rowsGo(arr, `${arr.length} ${lbl}`))}><span class="num">${arr.length}</span><span class="lbl">${lbl}</span><div class="small muted">${arr.length ? `${fmt(arr[0].date)} – ${fmt(arr.at(-1).date)}` : '–'}</div></div>`;
   const comps = [...S.groupBy(g, (x) => x.comp).entries()].map(([c, gs2]) => ({ c, ...S.record(gs2) })).sort((a, b) => b.n - a.n);
   const dm = cal.dayMonth;
   const topDayCount = dm[0]?.[1] || 0;
@@ -266,19 +316,19 @@ function viewStats() {
   <div class="grid grid-2" style="margin-top:14px">
     <div class="card"><h3>Bester Werder-Schütze je Saison</h3>
       <div class="table-wrap"><table><thead><tr><th class="l">Saison</th><th class="l">Spieler</th><th>Tore</th></tr></thead><tbody>
-      ${perSeason.map((s) => `<tr><td class="l">${esc(s.season)}</td><td class="l">${s.players.length ? `<span class="clubcell">${s.players.map((p) => avatar(p.name, 'Werder', 26)).join('')} ${s.players.map((p) => esc(fullName(p.name, 'Werder'))).join(', ')}</span>` : '<span class="muted">–</span>'}</td><td>${s.goals}</td></tr>`).join('')}
+      ${perSeason.map((s) => `<tr${s.players.length ? go({ ...scorerGo(s.players[0], true), season: s.season }) : ''}><td class="l">${esc(s.season)}</td><td class="l">${s.players.length ? `<span class="clubcell">${s.players.map((p) => avatar(p.name, 'Werder', 26)).join('')} ${s.players.map((p) => esc(fullName(p.name, 'Werder'))).join(', ')}</span>` : '<span class="muted">–</span>'}</td><td>${s.goals}</td></tr>`).join('')}
       </tbody></table></div></div>
     <div class="card"><h3>Tor-Fakten</h3>
       <div class="facts">
-        <div class="fact"><span class="num">${dec((r.gf + r.ga) / r.n, 2)}</span><span class="lbl">Tore pro Spiel</span></div>
-        <div class="fact"><span class="num">${dec(r.gf / r.n, 2)}</span><span class="lbl">Werder-Tore pro Spiel</span></div>
-        <div class="fact"><span class="num">${gs.pens.forW}:${gs.pens.againstW}</span><span class="lbl">Elfmetertore (für : gegen)</span></div>
-        <div class="fact"><span class="num">${gs.own.forW}:${gs.own.againstW}</span><span class="lbl">Eigentore (für : gegen Werder)</span></div>
-        <div class="fact"><span class="num">${rec.cleanSheets}</span><span class="lbl">Spiele zu Null</span></div>
-        <div class="fact"><span class="num">${rec.failedToScore}</span><span class="lbl">Spiele ohne Werder-Tor</span></div>
-        <div class="fact"><span class="num">${rec.goalless}</span><span class="lbl">Torlose Remis (0:0)</span></div>
-        <div class="fact"><span class="num">${gs.hattricks.length}</span><span class="lbl">Hattricks gesehen</span></div>
-        <div class="fact"><span class="num">${wTop.length}</span><span class="lbl">verschiedene Werder-Torschützen</span></div>
+        <div class="fact clickable"${go({})}><span class="num">${dec((r.gf + r.ga) / r.n, 2)}</span><span class="lbl">Tore pro Spiel</span></div>
+        <div class="fact clickable"${go({})}><span class="num">${dec(r.gf / r.n, 2)}</span><span class="lbl">Werder-Tore pro Spiel</span></div>
+        <div class="fact"><span class="num"><a class="num-link"${go({ fact: 'pen-for' })}>${gs.pens.forW}</a>:<a class="num-link"${go({ fact: 'pen-against' })}>${gs.pens.againstW}</a></span><span class="lbl">Elfmetertore (für : gegen)</span></div>
+        <div class="fact"><span class="num"><a class="num-link"${go({ fact: 'own-for' })}>${gs.own.forW}</a>:<a class="num-link"${go({ fact: 'own-against' })}>${gs.own.againstW}</a></span><span class="lbl">Eigentore (für : gegen Werder)</span></div>
+        <div class="fact clickable"${go({ fact: 'clean' })}><span class="num">${rec.cleanSheets}</span><span class="lbl">Spiele zu Null</span></div>
+        <div class="fact clickable"${go({ fact: 'noscore' })}><span class="num">${rec.failedToScore}</span><span class="lbl">Spiele ohne Werder-Tor</span></div>
+        <div class="fact clickable"${go({ fact: 'goalless' })}><span class="num">${rec.goalless}</span><span class="lbl">Torlose Remis (0:0)</span></div>
+        <div class="fact clickable"${go({ fact: 'hattrick' })}><span class="num">${gs.hattricks.length}</span><span class="lbl">Hattricks gesehen</span></div>
+        <div class="fact clickable"${go({ tab: 'statistiken' })}><span class="num">${wTop.length}</span><span class="lbl">verschiedene Werder-Torschützen</span></div>
       </div>
       <h3 style="margin-top:18px">Hattricks</h3>
       <ul class="mini">${gs.hattricks.map(({ g: x, s }) => miniGame(x, `<b>${esc(fullName(s.name, s.team))}</b> (${s.n})`)).join('')}</ul>
@@ -303,23 +353,23 @@ function viewStats() {
       </div>
       <p class="small muted" style="margin:12px 0 0">Aktuell: ${str.current.win.length ? `${plural(str.current.win.length, 'Sieg', 'Siege')} in Folge` : str.current.unbeaten.length ? `${str.current.unbeaten.length} ungeschlagen` : `${str.current.winless.length} sieglos`}.</p>
     </div>
-    <div class="card"><h3>Häufigste Ergebnisse</h3><p class="section-sub">aus Werder-Sicht</p>${hbars(lines.slice(0, 10))}</div>
+    <div class="card"><h3>Häufigste Ergebnisse</h3><p class="section-sub">aus Werder-Sicht</p>${hbars(lines.slice(0, 10), { to: (k) => ({ score: k }) })}</div>
   </div>
   <div class="grid grid-2" style="margin-top:14px">
-    <div class="card"><h3>Zur Halbzeit gedreht</h3><p class="section-sub">Rückstand zur Pause, am Ende gewonnen: ${rec.turnarounds.length}×</p><ul class="mini">${rec.turnarounds.map((x) => miniGame(x, `Halbzeit ${x.htf}:${x.hta}`)).join('')}</ul></div>
-    <div class="card"><h3>Führung verspielt</h3><p class="section-sub">Führung zur Pause, am Ende verloren: ${rec.thrownAway.length}×</p><ul class="mini">${rec.thrownAway.map((x) => miniGame(x, `Halbzeit ${x.htf}:${x.hta}`)).join('')}</ul></div>
+    <div class="card"><h3>Zur Halbzeit gedreht</h3><p class="section-sub">Rückstand zur Pause, am Ende gewonnen: <a class="link"${go({ fact: 'turnaround' })}>${rec.turnarounds.length}×</a></p><ul class="mini">${rec.turnarounds.map((x) => miniGame(x, `Halbzeit ${x.htf}:${x.hta}`)).join('')}</ul></div>
+    <div class="card"><h3>Führung verspielt</h3><p class="section-sub">Führung zur Pause, am Ende verloren: <a class="link"${go({ fact: 'thrown' })}>${rec.thrownAway.length}×</a></p><ul class="mini">${rec.thrownAway.map((x) => miniGame(x, `Halbzeit ${x.htf}:${x.hta}`)).join('')}</ul></div>
   </div>
 
   <h2>Kalender</h2>
   <div class="facts">
-    <div class="fact"><span class="num">${topDays.join(', ')}</span><span class="lbl">häufigstes Datum (${topDayCount}× im Stadion)</span></div>
-    <div class="fact"><span class="num">${topWd[0]}</span><span class="lbl">häufigster Wochentag (${topWd[1]}×)</span></div>
-    <div class="fact"><span class="num">${S.MONTHS[topMonth[0]]}</span><span class="lbl">häufigster Monat (${topMonth[1]}×)</span></div>
-    <div class="fact"><span class="num">${topSeason[0]}</span><span class="lbl">Saison mit den meisten Spielen (${topSeason[1]})</span></div>
-    <div class="fact"><span class="num">${topYear[0]}</span><span class="lbl">Kalenderjahr mit den meisten Spielen (${topYear[1]})</span></div>
+    <div class="fact clickable"${go({ day: topDays[0] })}><span class="num">${topDays.join(', ')}</span><span class="lbl">häufigstes Datum (${topDayCount}× im Stadion)</span></div>
+    <div class="fact clickable"${go({ wd: S.WEEKDAYS.indexOf(topWd[0]) })}><span class="num">${topWd[0]}</span><span class="lbl">häufigster Wochentag (${topWd[1]}×)</span></div>
+    <div class="fact clickable"${go({ month: topMonth[0] })}><span class="num">${S.MONTHS[topMonth[0]]}</span><span class="lbl">häufigster Monat (${topMonth[1]}×)</span></div>
+    <div class="fact clickable"${go({ season: topSeason[0] })}><span class="num">${topSeason[0]}</span><span class="lbl">Saison mit den meisten Spielen (${topSeason[1]})</span></div>
+    <div class="fact clickable"${go({ year: topYear[0] })}><span class="num">${topYear[0]}</span><span class="lbl">Kalenderjahr mit den meisten Spielen (${topYear[1]})</span></div>
   </div>
   <div class="grid grid-2" style="margin-top:14px">
-    <div class="card"><h3>Häufigste Daten</h3><p class="section-sub">Tag & Monat, über alle Jahre</p>${hbars(dm.slice(0, 12))}</div>
+    <div class="card"><h3>Häufigste Daten</h3><p class="section-sub">Tag & Monat, über alle Jahre</p>${hbars(dm.slice(0, 12), { to: (k) => ({ day: k }) })}</div>
     <div class="card"><h3>Wochentage</h3><div class="chart-box"><canvas id="ch-wd"></canvas></div></div>
     <div class="card"><h3>Monate</h3><div class="chart-box"><canvas id="ch-month"></canvas></div></div>
     <div class="card"><h3>Spiele pro Kalenderjahr</h3><div class="chart-box"><canvas id="ch-year"></canvas></div></div>
@@ -335,18 +385,19 @@ function viewStats() {
 function afterStats() {
   const cal = S.calendar(state.games);
   const green = css('--accent');
-  const single = (id, labels, data, label) => chart(id, {
+  const single = (id, labels, data, label, onPick) => chart(id, {
     type: 'bar', data: { labels, datasets: [{ label, data, backgroundColor: green, ...barDefaults }] },
     options: { plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { ticks: { precision: 0 } } } },
-  });
-  single('ch-wd', ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], [1, 2, 3, 4, 5, 6, 0].map((d) => cal.weekday.get(d) || 0), 'Spiele');
-  single('ch-month', S.MONTHS.map((m) => m.slice(0, 3)), S.MONTHS.map((_, i) => cal.month.get(i) || 0), 'Spiele');
+  }, onPick);
+  const wdOrder = [1, 2, 3, 4, 5, 6, 0];
+  single('ch-wd', ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'], wdOrder.map((d) => cal.weekday.get(d) || 0), 'Spiele', (i) => goGames({ wd: wdOrder[i] }));
+  single('ch-month', S.MONTHS.map((m) => m.slice(0, 3)), S.MONTHS.map((_, i) => cal.month.get(i) || 0), 'Spiele', (i) => goGames({ month: i }));
   const years = [...cal.year.keys()].sort();
   const allYears = []; for (let y = years[0]; y <= years.at(-1); y++) allYears.push(y);
-  single('ch-year', allYears, allYears.map((y) => cal.year.get(y) || 0), 'Spiele');
+  single('ch-year', allYears, allYears.map((y) => cal.year.get(y) || 0), 'Spiele', (i) => goGames({ year: allYears[i] }));
   const ages = [...cal.age.keys()].filter((a) => a != null && !Number.isNaN(a)).sort((a, b) => a - b);
   const allAges = []; for (let a = ages[0]; a <= ages.at(-1); a++) allAges.push(a);
-  single('ch-age', allAges.map((a) => `${a}`), allAges.map((a) => cal.age.get(a) || 0), 'Spiele');
+  single('ch-age', allAges.map((a) => `${a}`), allAges.map((a) => cal.age.get(a) || 0), 'Spiele', (i) => goGames({ age: allAges[i] }));
   const seasons = S.bySeason(state.games);
   chart('ch-ppg', {
     type: 'line',
@@ -354,7 +405,7 @@ function afterStats() {
       datasets: [{ label: 'Punkte pro Spiel', data: seasons.map((s) => +s.ppg.toFixed(2)), borderColor: green, backgroundColor: green, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, tension: .25 }] },
     options: { plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (i) => { const s = seasons[i.dataIndex]; return `${s.n} Spiele · ${s.S}-${s.U}-${s.N}`; } } } },
       scales: { x: { grid: { display: false } }, y: { min: 0, max: 3 } } },
-  });
+  }, (i) => goGames({ season: seasons[i].season }));
 }
 
 // ----- Gegner -----
@@ -438,6 +489,7 @@ function viewCheck() {
     <ol class="small" style="margin:0;padding-left:18px;line-height:1.8">
       <li>Neue Zeile in der Excel, gleiches Format: <code>Werder Bremen - Gegner</code>, Ergebnis <code>2:1 (1:0)</code>, Torschützen <code>Heim-Schützen - Gast-Schützen</code>, z. B. <code>Füllkrug (2), Stage (FE) - Kane</code>.</li>
       <li>Markierungen: <code>(2)</code> Anzahl, <code>(ET)</code> Eigentor, <code>(FE)</code> Foulelfmeter, <code>(HE)</code> Handelfmeter, <code>/</code> keine Tore, Elfmeterschießen: <code>1:1, 4:3 n. E. (0:1)</code>.</li>
+      <li>Mehrere Tore mit Elfer: <code>Ailton (3, FE)</code> = 3 Tore, davon 1 Foulelfmeter · <code>Ailton (3, 2 FE)</code> = davon 2 Foulelfmeter · gemischt: <code>(3, FE, HE)</code>.</li>
       <li>Excel speichern, oben auf den <b>Upload-Pfeil</b> klicken, Vorschau prüfen und „Hochladen“ – nach ca. 1 Minute ist die Seite überall aktuell.</li>
     </ol></div>`;
 }
@@ -448,7 +500,7 @@ function openGame(key) {
   const g = (kind === 'extra' ? state.allExtra : state.allGames).find((x) => String(x.row) === row);
   if (!g) return;
   const side = (homeSide) => g.scorers.filter((s) => (s.forWerder === g.werderHome) === homeSide);
-  const li = (s) => `<li>${avatar(s.name, s.team, 34)}<span>${esc(fullName(s.name, s.team))}${s.n > 1 ? ` <b>(${s.n})</b>` : ''}${s.tags.map((t) => `<span class="tag" title="${{ ET: 'Eigentor', FE: 'Foulelfmeter', HE: 'Handelfmeter' }[t]}">${t}</span>`).join('')}</span></li>`;
+  const li = (s) => `<li>${avatar(s.name, s.team, 34)}<span>${esc(fullName(s.name, s.team))}${s.n > 1 ? ` <b>(${s.n})</b>` : ''}${markLabels(s).map((t) => `<span class="tag" title="${{ ET: 'Eigentor', FE: 'Foulelfmeter', HE: 'Handelfmeter' }[t.slice(-2)]}${s.n > 1 && t.slice(-2) !== 'ET' ? ' (davon)' : ''}">${t}</span>`).join('')}</span></li>`;
   const sub = g.res?.pens ? `${g.res.pens.home}:${g.res.pens.away} i.E.` : g.res?.ht ? `Halbzeit ${g.res.ht.home}:${g.res.ht.away}` : '';
   $('#game-dialog-body').innerHTML = `
     <div class="dlg-head"><div class="meta">Spiel Nr. ${g.nr ?? '–'} · ${fmt(g.date)} · ${S.WEEKDAYS[g.date?.getDay()] || ''}</div>
@@ -472,7 +524,8 @@ const routes = {
   gegner: [viewOpponents, renderOppTable], stadien: [viewStadiums], u23: [viewExtra], check: [viewCheck],
 };
 function render() {
-  const tab = location.hash.replace(/^#\/?/, '').split('?')[0];
+  const [tab, query] = location.hash.replace(/^#\/?/, '').split('?');
+  if (tab === 'spiele') state.gameFilter = Object.fromEntries(new URLSearchParams(query || ''));
   const [view, after] = routes[tab] || routes[''];
   if ($('#game-dialog').open) $('#game-dialog').close();
   state.charts.forEach((c) => c.destroy());
@@ -483,14 +536,19 @@ function render() {
 }
 
 function goGames(filter) {
-  state.gameFilter = filter;
-  if (location.hash === '#/spiele') render(); else location.hash = '#/spiele';
+  const { tab, ...rest } = filter;
+  if (tab) { location.hash = `#/${tab}`; return; }
+  const qs = new URLSearchParams(Object.entries(rest).filter(([, v]) => v != null && v !== '')).toString();
+  const target = `#/spiele${qs ? '?' + qs : ''}`;
+  if (location.hash === target) render(); else location.hash = target;
   window.scrollTo(0, 0);
 }
 
 document.addEventListener('click', (e) => {
   const gEl = e.target.closest('[data-game]');
   if (gEl) return openGame(gEl.dataset.game);
+  const goEl = e.target.closest('[data-go]');
+  if (goEl) { e.preventDefault(); return goGames(Object.fromEntries(new URLSearchParams(goEl.dataset.go))); }
   const more = e.target.closest('[data-more]');
   if (more) { const id = more.dataset.more; $('#' + id).innerHTML = $('#' + id + '-all').innerHTML; more.remove(); return; }
   const fo = e.target.closest('[data-filter-opp]');
@@ -501,6 +559,9 @@ document.addEventListener('click', (e) => {
   if (fc) return goGames({ comp: fc.dataset.filterComp });
 });
 $('#game-dialog').addEventListener('click', (e) => { if (e.target.id === 'game-dialog') e.target.close(); });
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-go], li[data-game]')) { e.preventDefault(); e.target.click(); }
+});
 
 // Theme
 function applyTheme(t) {
@@ -549,7 +610,9 @@ function viewTokenSetup(msg = '') {
       <button class="btn primary" id="token-save">Speichern &amp; prüfen</button>
       ${has ? '<button class="btn" id="token-clear">Token entfernen</button>' : ''}
       ${U.canRemember() ? '<button class="btn link" id="file-forget">Gemerkte Datei vergessen</button>' : ''}
-    </div>`);
+    </div>
+    <p class="small muted" style="margin:12px 0 0">Status: Token ${has ? '<b>gespeichert</b>' : 'nicht gespeichert'} · <span id="file-status">${U.canRemember() ? 'Datei wird geprüft …' : 'Dieser Browser kann sich keine Datei merken (nur Chrome/Edge am PC).'}</span></p>`);
+  if (U.canRemember()) U.rememberedName().then((n) => { const el = $('#file-status'); if (el) el.innerHTML = n ? `Gemerkte Datei: <b>${esc(n)}</b>` : 'Noch keine Datei gemerkt'; });
   $('#token-input').focus();
 }
 
@@ -607,6 +670,7 @@ function viewPreview() {
   const anyChange = p.added.length || changed.length || removed.length;
   openUpload(`
     <p class="small muted" style="margin-bottom:10px">📄 <b>${esc(file.name)}</b> · gespeichert ${ageTxt}</p>
+    ${U.fileNote ? `<div class="msg ${U.fileNote.startsWith('Es war noch') ? 'ok' : 'warn'}">${esc(U.fileNote)}</div>` : ''}
     ${file.name !== U.EXPECTED_NAME ? `<div class="msg warn">Der Dateiname weicht von „${esc(U.EXPECTED_NAME)}“ ab – richtige Datei?</div>` : ''}
     <div class="diff-grid">
       <div class="fact"><span class="num">${p.added.length}</span><span class="lbl">neue Spiele</span></div>
@@ -693,7 +757,7 @@ function renderHeader() {
   const r = S.record(state.games);
   const nFriendly = state.allGames.filter(isFriendly).length;
   $('#hero-sub').textContent = `Dennis Mulert · ${state.allGames.length} Spiele im Stadion seit ${state.allGames[0]?.date?.getFullYear() ?? ''}`;
-  $('#hero-record').innerHTML = `<span class="chip"><b>${r.S}</b>Siege</span><span class="chip"><b>${r.U}</b>Remis</span><span class="chip"><b>${r.N}</b>Niederlagen</span><span class="chip"><b>${r.gf}:${r.ga}</b>Tore</span>
+  $('#hero-record').innerHTML = `<a class="chip" href="#/spiele?outcome=S"><b>${r.S}</b>Siege</a><a class="chip" href="#/spiele?outcome=U"><b>${r.U}</b>Remis</a><a class="chip" href="#/spiele?outcome=N"><b>${r.N}</b>Niederlagen</a><a class="chip" href="#/spiele"><b>${r.gf}:${r.ga}</b>Tore</a>
     <label class="chip toggle"><input type="checkbox" id="toggle-friendlies" ${state.withFriendlies ? 'checked' : ''}> inkl. ${nFriendly} Testspiele</label>`;
 }
 

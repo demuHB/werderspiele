@@ -54,7 +54,7 @@ export function topScorers(games, players, { werder }) {
     e.goals += s.n;
     e.games.add(g);
     e.teams.add(s.team);
-    if (s.pen) e.pens++;
+    e.pens += s.penGoals;
     if (s.n >= 3) e.hattricks++;
     e.last = g;
   }
@@ -121,7 +121,7 @@ export function goalStats(games) {
   let own = { forW: 0, againstW: 0 }, pens = { forW: 0, againstW: 0 }, hattricks = [];
   for (const g of games) for (const s of g.scorers) {
     if (s.own) s.forWerder ? own.forW += s.n : own.againstW += s.n;
-    if (s.pen) s.forWerder ? pens.forW++ : pens.againstW++;
+    if (s.pen) s.forWerder ? pens.forW += s.penGoals : pens.againstW += s.penGoals;
     if (s.n >= 3 && !s.own) hattricks.push({ g, s });
   }
   return { own, pens, hattricks };
@@ -168,4 +168,39 @@ export function topScorerPerSeason(games, players) {
     const max = top[0]?.goals || 0;
     return { season: s.season, goals: max, players: top.filter((t) => t.goals === max && max > 0) };
   });
+}
+
+// ---------- Drill-down: "Klick auf eine Statistik -> passende Spiele" ----------
+// Parameter (alle optional, aus der URL #/spiele?…): wd (0=So … 6=Sa), month (0–11), year, age,
+// day ("TT.MM."), score ("2:1" aus Werder-Sicht), player (+ pside "w"/"o"), fact, rows ("12,13,…")
+export const DRILL_KEYS = ['wd', 'month', 'year', 'age', 'day', 'score', 'player', 'fact', 'rows'];
+
+export const dayKey = (g) => (g.date ? `${String(g.date.getDate()).padStart(2, '0')}.${String(g.date.getMonth() + 1).padStart(2, '0')}.` : null);
+
+export const FACTS = {
+  'pen-for': { label: 'Elfmetertore für Werder', test: (g) => g.scorers.some((s) => s.pen && s.forWerder) },
+  'pen-against': { label: 'Elfmetertore gegen Werder', test: (g) => g.scorers.some((s) => s.pen && !s.forWerder) },
+  'own-for': { label: 'Eigentore für Werder', test: (g) => g.scorers.some((s) => s.own && s.forWerder) },
+  'own-against': { label: 'Eigentore gegen Werder', test: (g) => g.scorers.some((s) => s.own && !s.forWerder) },
+  clean: { label: 'Zu Null', test: (g) => g.res && g.ga === 0 },
+  noscore: { label: 'Ohne Werder-Tor', test: (g) => g.res && g.gf === 0 },
+  goalless: { label: '0:0', test: (g) => g.res && g.gf === 0 && g.ga === 0 },
+  hattrick: { label: 'Hattricks', test: (g) => g.scorers.some((s) => s.n >= 3 && !s.own) },
+  turnaround: { label: 'Zur Halbzeit gedreht', test: (g) => g.htf != null && g.htf < g.hta && g.outcome === 'S' },
+  thrown: { label: 'Führung verspielt', test: (g) => g.htf != null && g.htf > g.hta && g.outcome === 'N' },
+};
+
+const has = (v) => v != null && v !== '';
+export function matchDrill(g, f, players) {
+  if (has(f.wd) && g.date?.getDay() !== +f.wd) return false;
+  if (has(f.month) && g.date?.getMonth() !== +f.month) return false;
+  if (has(f.year) && g.date?.getFullYear() !== +f.year) return false;
+  if (has(f.age) && g.age !== +f.age) return false;
+  if (has(f.day) && dayKey(g) !== f.day) return false;
+  if (has(f.score) && (!g.res || `${g.gf}:${g.ga}` !== f.score)) return false;
+  if (has(f.player) && !g.scorers.some((s) => !s.own && playerKey(s, players) === f.player
+    && (!f.pside || s.forWerder === (f.pside === 'w')))) return false;
+  if (has(f.fact) && !(FACTS[f.fact]?.test(g))) return false;
+  if (has(f.rows) && !f.rows.split(',').includes(String(g.row))) return false;
+  return true;
 }

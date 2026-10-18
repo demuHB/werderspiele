@@ -21,7 +21,7 @@ Die Seite ist rein statisch. Sie liest die Excel-Datei `data/werderspiele.xlsx` 
    | Torschützen | `Füllkrug (2), Stage (FE) - Kane` (erst Heim, dann Gast), `/` = keine Tore |
    | Alter | `34` |
 
-   Markierungen bei Torschützen: `(2)` für die Anzahl, `(ET)` für ein Eigentor (der Spieler steht auf der Seite des Teams, dem das Tor gutgeschrieben wird), `(FE)` für Foulelfmeter und `(HE)` für Handelfmeter.
+   Markierungen bei Torschützen: `(2)` für die Anzahl, `(ET)` für ein Eigentor (der Spieler steht auf der Seite des Teams, dem das Tor gutgeschrieben wird), `(FE)` für Foulelfmeter und `(HE)` für Handelfmeter. Mehrere Tore mit Elfer schreibst du in eine Klammer: `Ailton (3, FE)` heißt 3 Tore, davon 1 Foulelfmeter, `Ailton (3, 2 FE)` heißt davon 2.
 
 2. Die Datei hochladen:
    - **Am einfachsten im Dashboard:** Oben rechts auf den **Upload-Pfeil** klicken. Das Dashboard zeigt eine Vorschau (neue Spiele, Datencheck), „Hochladen“ committet die Datei als `data/werderspiele.xlsx`. Der Dateiname der Excel ist dabei egal.

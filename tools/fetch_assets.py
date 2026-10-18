@@ -78,14 +78,32 @@ def fold(s):
 
 
 # ---------- Excel lesen (gleiche Regeln wie js/parse.js) ----------
+def split_outside_parens(text):
+    """An Kommas trennen, aber nicht innerhalb von Klammern ("Ailton (3, FE), Micoud")."""
+    parts, depth, cur = [], 0, ""
+    for ch in text or "":
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return parts
+
+
 def parse_scorers(text):
+    """-> [(name, tore, eigentor)]; Klammern wie in js/parse.js: (2), (FE), (3, FE), (3, 2 FE), (ET)"""
     out = []
-    for p in (text or "").split(","):
+    for p in split_outside_parens(text):
         p = p.strip()
         if not p or p in ("/", "*"):
             continue
-        m = re.search(r"\((\d+)\)", p)
-        out.append((re.sub(r"\s*\(.*?\)", "", p).strip(), int(m[1]) if m else 1, "(ET)" in p))
+        items = [t.strip() for m in re.findall(r"\(([^)]*)\)", p) for t in m.split(",") if t.strip()]
+        n = next((int(t) for t in items if t.isdigit()), None)
+        marks = sum(int(m[1] or 1) for t in items if (m := re.fullmatch(r"(\d+)?\s*(FE|HE)", t, re.I)))
+        own = any(re.fullmatch(r"(\d+\s*)?ET", t, re.I) for t in items)
+        out.append((re.sub(r"\s*\(.*?\)", "", p).strip(), n or max(1, marks), own))
     return out
 
 
