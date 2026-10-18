@@ -47,6 +47,21 @@ export function validate(games, { clubs, players, kind = 'main' }) {
       if (g.res.ht && (g.res.ht.home > g.res.home || g.res.ht.away > g.res.away))
         add('error', g, 'Halbzeitstand höher als Endstand');
       if (!g.res.ht && g.res.home + g.res.away > 0) add('info', g, 'Kein Halbzeitstand angegeben');
+      // Gleicher Spieler mehrfach auf derselben Seite, z. B. "Füllkrug, Füllkrug (HE)" -> "Füllkrug (2, HE)"
+      const bySide = new Map();
+      for (const s of g.scorers) {
+        if (s.own) continue;
+        const k = `${s.forWerder}|${s.name}`;
+        bySide.set(k, [...(bySide.get(k) || []), s]);
+      }
+      for (const list of bySide.values()) {
+        if (list.length < 2) continue;
+        const n = list.reduce((a, s) => a + s.n, 0);
+        const fe = list.reduce((a, s) => a + s.marks.FE, 0), he = list.reduce((a, s) => a + s.marks.HE, 0);
+        const tag = (c, k) => (c ? (c > 1 ? `${c} ${k}` : k) : null);
+        const inner = [n, tag(fe, 'FE'), tag(he, 'HE')].filter(Boolean).join(', ');
+        add('warn', g, `„${list[0].name}“ steht ${list.length}× in der Liste – bitte zusammenfassen: „${list[0].name} (${inner})“`);
+      }
       for (const s of g.scorers) {
         if (s.unknownTags.length) add('warn', g, `Unbekannte Markierung „${s.unknownTags.join(', ')}“ bei ${s.name} (erlaubt: Anzahl, FE, HE, ET – z. B. „(3, FE)“)`);
         if (s.penGoals > s.n) add('error', g, `${s.name}: mehr Elfmetertore (${s.penGoals}) als Tore (${s.n})`);
