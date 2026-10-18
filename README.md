@@ -47,8 +47,9 @@ Neue Gegner oder Torschützen erscheinen zunächst mit Initialen. Logos und Foto
    python tools/fetch_assets.py
    ```
    Das Skript lädt fehlende Logos nach `assets/logos/` und sucht neue Torschützen auf Wikipedia. Die Fotos speichert es nach `assets/players/`, die Zuordnung landet in `data/players.json`.
-3. Falsche Zuordnungen in `data/players.json` von Hand korrigieren und dort `"manual": true` setzen. Dann überschreibt das Skript den Eintrag nicht mehr.
-4. Alles committen und pushen.
+3. **Eigenes Foto** für Spieler ohne freies Bild (z. B. Jens Stage): als `assets/players/jens-stage.jpg` ablegen (Vorname-Nachname, klein, Bindestrich) und das Skript laufen lassen – es wird automatisch zugeordnet und nie überschrieben.
+4. Falsche Zuordnungen in `data/players.json` von Hand korrigieren und dort `"manual": true` setzen. Dann überschreibt das Skript den Eintrag nicht mehr.
+5. Alles committen und pushen.
 
 ## Lokal ansehen
 

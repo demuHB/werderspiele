@@ -4,7 +4,8 @@ Aufruf (im Repo-Ordner):   python tools/fetch_assets.py
 Optionen:                  --min-opp-goals N   Gegner-Torschuetzen erst ab N Toren (Standard 1)
                            --refresh           bereits vorhandene Eintraege neu suchen
 
-Bereits vorhandene Logos/Fotos werden nicht neu geladen. Eintraege in players.json mit
+Bereits vorhandene Logos/Fotos werden nicht neu geladen. Eigenes Foto: als
+assets/players/<vorname-nachname>.jpg ablegen (z. B. jens-stage.jpg) und das Skript laufen lassen. Eintraege in players.json mit
 "manual": true werden nie automatisch ueberschrieben -> dort Korrekturen von Hand eintragen.
 Benoetigt: pip install openpyxl pillow
 """
@@ -218,6 +219,67 @@ def fetch_manual_photo(entry):
     print("Foto fehlt", entry["wiki"])
 
 
+def commons_thumb(filename, width=300):
+    """Thumbnail-URL einer Commons-Datei (z. B. aus Wikidata P18)."""
+    pages = http_json("https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(dict(
+        action="query", titles=f"File:{filename}", prop="imageinfo", iiprop="url", iiurlwidth=width,
+        format="json", formatversion="2")))["query"]["pages"]
+    return (pages[0].get("imageinfo") or [{}])[0].get("thumburl")
+
+
+def find_free_photo(wiki_title):
+    """Weitere freie Quellen, wenn die deutsche Wikipedia kein Hauptbild hat:
+    1. Wikidata-Bild (P18) des Artikels, 2. Hauptbild der englischen Wikipedia."""
+    pages = api("de", action="query", titles=wiki_title, prop="pageprops", redirects=1)["query"]["pages"]
+    qid = pages[0].get("pageprops", {}).get("wikibase_item")
+    if not qid:
+        return None
+    ent = http_json("https://www.wikidata.org/w/api.php?" + urllib.parse.urlencode(dict(
+        action="wbgetentities", ids=qid, props="claims|sitelinks", sitefilter="enwiki", format="json")))["entities"][qid]
+    p18 = ent.get("claims", {}).get("P18")
+    if p18:
+        thumb = commons_thumb(p18[0]["mainsnak"]["datavalue"]["value"])
+        if thumb:
+            return thumb, "Wikidata"
+    en = ent.get("sitelinks", {}).get("enwiki", {}).get("title")
+    if en:
+        pg = api("en", action="query", titles=en, prop="pageimages", pithumbsize=300)["query"]["pages"][0]
+        thumb = pg.get("thumbnail", {}).get("source")
+        if thumb and not pg.get("pageimage", "").lower().endswith((".svg", ".png")):  # Wappen/Logos auslassen
+            return thumb, "en.wikipedia"
+    return None
+
+
+def fill_missing_photos(data):
+    """Für Spieler mit Wikipedia-Artikel, aber ohne Foto: eigene Datei verwenden oder freie Quellen durchsuchen."""
+    for key, e in sorted(data.items()):
+        if e.get("img") or not e.get("full"):
+            continue
+        # 1) Eigenes Foto: assets/players/<vorname-nachname>.jpg|png (z. B. jens-stage.jpg)
+        own = next((f for f in (PHOTOS / f"{slug(e['full'])}{ext}" for ext in (".jpg", ".jpeg", ".png", ".webp")) if f.exists()), None)
+        if own:
+            e.update(img=own.relative_to(ROOT).as_posix(), manual=True, source="eigene Datei")
+            print("Foto eigen ", key, "->", e["img"])
+            continue
+        if not e.get("wiki") or e.get("noimg") == "checked-free":
+            continue
+        try:
+            hit = find_free_photo(e["wiki"])
+        except Exception as ex:  # noqa
+            print("  Fehler", key, ex)
+            continue
+        if hit:
+            thumb, src = hit
+            e.update(thumb=thumb, img=f"assets/players/{slug(e['full'])}.jpg", source=src)
+            if not (ROOT / e["img"]).exists():
+                download(thumb, ROOT / e["img"])
+            print("Foto neu  ", key, "<-", src)
+        else:
+            e["noimg"] = "checked-free"  # nicht bei jedem Lauf erneut suchen
+            print("Foto keins", key)
+        time.sleep(0.5)
+
+
 def fetch_players(min_opp, refresh):
     PHOTOS.mkdir(parents=True, exist_ok=True)
     data = json.loads(PLAYERS.read_text(encoding="utf-8")) if PLAYERS.exists() else {}
@@ -252,6 +314,7 @@ def fetch_players(min_opp, refresh):
         time.sleep(0.7)
         if len(data) % 20 == 0:
             save_players(data)
+    fill_missing_photos(data)
     save_players(data)
 
 
